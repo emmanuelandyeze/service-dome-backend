@@ -1,27 +1,45 @@
 import express from 'express';
 import Service from '../models/Service.js';
+import Vendor from '../models/Vendor.js';
 import authMiddleware from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // Create a new service (Vendor only)
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', async (req, res) => {
 	try {
-		// Only vendors can create services
-		if (req.user.role !== 'vendor') {
+		const vendor = await Vendor.findById(req.user.id);
+		if (!vendor) {
 			return res
-				.status(403)
-				.json({ error: 'Unauthorized' });
+				.status(404)
+				.json({ error: 'Vendor not found' });
 		}
 
-		// Create and save service
-		const service = new Service({
+		// Count vendor's existing services
+		const serviceCount = await Service.countDocuments({
+			vendor: req.user.id,
+		});
+
+		if (
+			vendor.membershipTier === 'Free' &&
+			serviceCount >= 1
+		) {
+			return res.status(403).json({
+				error:
+					'Free tier can only list one service. Upgrade to Premium.',
+			});
+		}
+
+		const newService = new Service({
 			...req.body,
 			vendor: req.user.id,
 		});
-		await service.save();
+		await newService.save();
 
-		res.status(201).json(service);
+		res.status(201).json({
+			message: 'Service created successfully',
+			service: newService,
+		});
 	} catch (error) {
 		res
 			.status(500)
@@ -45,7 +63,6 @@ router.get('/', async (req, res) => {
 			.json({ error: 'Failed to fetch services' });
 	}
 });
-
 
 router.get('/vendor/:vendorId', async (req, res) => {
 	try {
@@ -105,6 +122,5 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 			.json({ error: 'Failed to delete service' });
 	}
 });
-
 
 export default router;

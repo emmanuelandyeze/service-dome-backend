@@ -1,6 +1,7 @@
 import express from 'express';
 import stripe from '../config/stripe.js';
 import Booking from '../models/Booking.js';
+import Vendor from '../models/Vendor.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -21,6 +22,7 @@ router.post(
 				process.env.STRIPE_WEBHOOK_SECRET,
 			);
 
+			// Handle Booking Payment
 			if (event.type === 'payment_intent.succeeded') {
 				const paymentIntent = event.data.object;
 				const bookingId = paymentIntent.metadata.bookingId;
@@ -31,6 +33,26 @@ router.post(
 				});
 
 				console.log(`Booking ${bookingId} marked as paid.`);
+			}
+
+			// Handle Vendor Subscription Payment
+			else if (event.type === 'invoice.payment_succeeded') {
+				const invoice = event.data.object;
+				const customerId = invoice.customer;
+
+				// Find vendor by Stripe customer ID
+				const vendor = await Vendor.findOne({
+					stripeCustomerId: customerId,
+				});
+
+				if (vendor) {
+					vendor.membershipTier = 'Premium';
+					vendor.subscriptionStatus = 'Active';
+					await vendor.save();
+					console.log(
+						`Vendor ${vendor._id} subscription activated.`,
+					);
+				}
 			}
 
 			res.json({ received: true });
