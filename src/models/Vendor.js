@@ -13,4 +13,4 @@ const VendorSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-export default mongoose.model('Vendor', VendorSchema);
+export default mongoose.model('Vendor', VendorSchema); 
