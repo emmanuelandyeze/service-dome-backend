@@ -7,6 +7,7 @@ const VendorSchema = new mongoose.Schema({
 	password: { type: String, required: true },
 	phone: { type: String, required: true },
 	logo: { type: String },
+	role: { type: String, required: true },
 	banner: { type: String },
 	location: {
 		latitude: { type: Number },

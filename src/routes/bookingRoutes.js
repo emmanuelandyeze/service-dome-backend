@@ -1,6 +1,7 @@
 import express from 'express';
 import Booking from '../models/Booking.js';
-import authMiddleware from '../middlewares/authMiddleware.js';
+import Service from '../models/Service.js';
+import { authMiddleware } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 

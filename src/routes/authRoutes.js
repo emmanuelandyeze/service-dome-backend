@@ -16,6 +16,7 @@ router.post('/register/customer', async (req, res) => {
 			email,
 			password: hashedPassword,
 			phone,
+			role: 'customer',
 		});
 		await customer.save();
 		res.status(201).json({
@@ -35,7 +36,6 @@ router.post('/register/vendor', async (req, res) => {
 			email,
 			password,
 			phone,
-			address,
 		} = req.body;
 		const hashedPassword = await bcrypt.hash(password, 10);
 		const vendor = new Vendor({
@@ -44,7 +44,7 @@ router.post('/register/vendor', async (req, res) => {
 			email,
 			password: hashedPassword,
 			phone,
-			address,
+			role: 'vendor',
 		});
 		await vendor.save();
 		res
@@ -62,6 +62,8 @@ router.post('/login', async (req, res) => {
 		const User = role === 'vendor' ? Vendor : Customer;
 		const user = await User.findOne({ email });
 
+		console.log(user);
+
 		if (
 			!user ||
 			!(await bcrypt.compare(password, user.password))
@@ -76,7 +78,12 @@ router.post('/login', async (req, res) => {
 			process.env.JWT_SECRET,
 			{ expiresIn: '7d' },
 		);
-		res.json({ token, role });
+		res.json({
+			token,
+			role,
+			user,
+			message: 'Login successful',
+		});
 	} catch (error) {
 		res.status(500).json({ error: 'Login failed' });
 	}

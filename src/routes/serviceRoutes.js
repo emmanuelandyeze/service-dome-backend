@@ -1,7 +1,7 @@
 import express from 'express';
 import Service from '../models/Service.js';
 import Vendor from '../models/Vendor.js';
-import authMiddleware from '../middlewares/authMiddleware.js';
+import { authMiddleware } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
