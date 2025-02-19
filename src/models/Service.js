@@ -6,26 +6,46 @@ const ServiceSchema = new mongoose.Schema({
 		ref: 'Vendor',
 		required: true,
 	}, // Vendor who owns the service
+
 	name: { type: String, required: true }, // Service name (e.g., "Pizza", "Haircut")
-	description: { type: String }, // Details about the service
-	price: { type: Number, required: true }, // Service price
+	description: { type: String }, // Service details
+	price: { type: Number }, // Service price
 	category: {
 		type: String,
 		required: true,
-		enum: ['Food', 'Beauty', 'Delivery', 'Other'],
-	}, // Type of service
+		enum: [
+			'Food',
+			'Beauty',
+			'Delivery',
+			'Cleaning',
+			'Other',
+		],
+	}, // Dynamic service categories
 
-	// Food-specific fields
-	menu: [{ name: String, price: Number }], // Menu for food vendors
+	// Category-Specific Items (For Food, Cleaning, etc.)
+	items: [
+		{
+			name: { type: String }, // Item name (e.g., "Burger", "Room Cleaning")
+			price: { type: Number }, // Item price
+			image: { type: String }, // Image URL
+		},
+	],
+
+	// Food-Specific Fields
 	deliveryAvailable: { type: Boolean }, // If food vendor offers delivery
 
-	// Beauty-specific fields
+	// Beauty-Specific Fields
 	duration: { type: Number }, // Service duration (e.g., 60 minutes for a haircut)
 
-	// Delivery service fields
+	// Cleaning & Beauty Services: Available Days & Time Slots
+	schedule: {
+		type: Map,
+		of: [{ startTime: String, endTime: String }], // Example: { Monday: [{ startTime: "09:00", endTime: "12:00" }] }
+	},
+
+	// Delivery Service Fields
 	deliveryRadius: { type: Number }, // Distance vendor delivers (for food & package delivery)
 
-	images: [{ type: String }], // Images of the service
 	availability: { type: Boolean, default: true }, // Whether the service is available
 	createdAt: { type: Date, default: Date.now },
 });
