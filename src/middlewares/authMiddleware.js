@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import Vendor from '../models/Vendor.js';
+import Customer from '../models/Customer.js';
 
 const authMiddleware = (req, res, next) => {
 	const token = req.header('Authorization')?.split(' ')[1];
@@ -48,4 +49,38 @@ const protectVendor = async (req, res, next) => {
 	}
 };
 
-export { authMiddleware, protectVendor };
+const protectCustomer = async (req, res, next) => {
+	try {
+		const token = req
+			.header('Authorization')
+			?.split(' ')[1];
+
+		if (!token) {
+			return res
+				.status(401)
+				.json({ error: 'Unauthorized' });
+		}
+
+		const decoded = jwt.verify(
+			token,
+			process.env.JWT_SECRET,
+		);
+		const customer = await Customer.findById(
+			decoded.id,
+		).select('-password');
+
+		if (!customer) {
+			return res
+				.status(401)
+				.json({ error: 'Unauthorized' });
+		}
+
+		req.customer = customer;
+		next();
+	} catch (error) {
+		console.error('Auth error:', error);
+		res.status(401).json({ error: 'Invalid token' });
+	}
+};
+
+export { authMiddleware, protectVendor, protectCustomer };

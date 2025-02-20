@@ -19,7 +19,17 @@ router.post('/register/customer', async (req, res) => {
 			role: 'customer',
 		});
 		await customer.save();
+
+		const token = jwt.sign(
+			{ id: customer._id, role: 'customer' },
+			process.env.JWT_SECRET,
+			{ expiresIn: '7d' },
+		);
+
 		res.status(201).json({
+			token,
+			user: customer,
+			role: 'customer',
 			message: 'Customer registered successfully',
 		});
 	} catch (error) {
@@ -47,9 +57,19 @@ router.post('/register/vendor', async (req, res) => {
 			role: 'vendor',
 		});
 		await vendor.save();
-		res
-			.status(201)
-			.json({ message: 'Vendor registered successfully' });
+
+		const token = jwt.sign(
+			{ id: vendor._id, role: 'vendor' },
+			process.env.JWT_SECRET,
+			{ expiresIn: '7d' },
+		);
+
+		res.status(201).json({
+			token,
+			user: vendor,
+			role: 'vendor',
+			message: 'Vendor registered successfully',
+		});
 	} catch (error) {
 		res.status(500).json({ error: 'Registration failed' });
 	}

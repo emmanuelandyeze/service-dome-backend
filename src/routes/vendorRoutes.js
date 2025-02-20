@@ -1,5 +1,6 @@
 import express from 'express';
 import Vendor from '../models/Vendor.js';
+import Service from '../models/Service.js';
 import cloudinary from '../config/cloudinary.js';
 import { protectVendor } from '../middlewares/authMiddleware.js';
 import { uploadVendor } from '../middlewares/uploadMiddleware.js';
@@ -110,22 +111,71 @@ router.put(
 	},
 );
 
-
-router.get('/:id', async (req, res) => {
+// Fetch vendors by service category
+router.get('/category', async (req, res) => {
 	try {
-		const vendor = await Vendor.findById(
-			req.params.id,
-		).select('-password');
-		if (!vendor)
-			return res
-				.status(404)
-				.json({ error: 'Vendor not found' });
+		const { category } = req.query;
 
-		res.json(vendor);
+		if (!category) {
+			return res
+				.status(400)
+				.json({ message: 'Category is required' });
+		}
+
+		// Find all services in the requested category and get their vendor IDs
+		const services = await Service.find({
+			category,
+		}).select('vendor');
+
+		// Extract unique vendor IDs
+		const vendorIds = [
+			...new Set(services.map((service) => service.vendor)),
+		];
+
+		// Fetch vendors whose IDs match the services found
+		const vendors = await Vendor.find({
+			_id: { $in: vendorIds },
+		}).select('businessName location logo reviews');
+
+		res.status(200).json(vendors);
 	} catch (error) {
-		console.error('Error fetching vendor:', error);
-		res.status(500).json({ error: 'Server error' });
+		console.error(error);
+		res.status(500).json({ message: 'Server error' });
 	}
 });
+
+router.get('/v/:id', async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		// Fetch the vendor details
+		const vendor = await Vendor.findById(id).select(
+			'-password',
+		); // Exclude password field
+
+		if (!vendor) {
+			return res
+				.status(404)
+				.json({ message: 'Vendor not found' });
+		}
+
+		// Fetch all services that belong to the vendor
+		const services = await Service.find({ vendor: id });
+
+		// Return structured response
+		return res.status(200).json({
+			vendor,
+			services,
+		});
+	} catch (error) {
+		console.error('Error fetching vendor details:', error);
+		return res
+			.status(500)
+			.json({ message: 'Server error' });
+	}
+});
+
+
+
 
 export default router;

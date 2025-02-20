@@ -7,6 +7,11 @@ const CustomerSchema = new mongoose.Schema({
 	phone: { type: String, required: true },
 	address: { type: String },
 	role: { type: String, required: true },
+	location: {
+		latitude: { type: Number },
+		longitude: { type: Number },
+		address: { type: String },
+	},
 	createdAt: { type: Date, default: Date.now },
 });
 

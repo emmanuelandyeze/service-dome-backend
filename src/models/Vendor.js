@@ -25,6 +25,12 @@ const VendorSchema = new mongoose.Schema({
 			comment: { type: String },
 		},
 	],
+	services: [
+		{
+			type: mongoose.Schema.Types.ObjectId,
+			ref: 'Service',
+		},
+	],
 	membershipTier: {
 		type: String,
 		enum: ['Free', 'Premium'],
