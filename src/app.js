@@ -26,7 +26,7 @@ app.use('/api/vendors', vendorRoutes);
 app.use('/api/customers', customerRoutes);
 
 app.get('/', (req, res) => {
-	res.send('Service Dome API is running...');
+	res.send('Service Dome API is running....');
 });
 
 export default app;
