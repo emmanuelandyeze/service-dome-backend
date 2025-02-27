@@ -40,16 +40,9 @@ router.post('/register/customer', async (req, res) => {
 // Register Vendor
 router.post('/register/vendor', async (req, res) => {
 	try {
-		const {
-			businessName,
-			ownerName,
-			email,
-			password,
-			phone,
-		} = req.body;
+		const { ownerName, email, password, phone } = req.body;
 		const hashedPassword = await bcrypt.hash(password, 10);
 		const vendor = new Vendor({
-			businessName,
 			ownerName,
 			email,
 			password: hashedPassword,

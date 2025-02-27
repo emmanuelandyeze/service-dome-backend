@@ -1,93 +1,81 @@
 import express from 'express';
 import Service from '../models/Service.js';
 import Vendor from '../models/Vendor.js';
-import { authMiddleware } from '../middlewares/authMiddleware.js';
+import {
+	authMiddleware,
+	protectVendor,
+} from '../middlewares/authMiddleware.js';
 import { uploadService } from '../middlewares/uploadMiddleware.js';
 
 const router = express.Router();
 
 // Create a new service (Vendor only)
 router.post(
-	'/',
-	authMiddleware,
-	uploadService.array('itemImages', 10),
+	'/services',
+	protectVendor,
+	uploadService.array('images', 5), // Adjust the limit as needed
 	async (req, res) => {
 		try {
-			const vendor = await Vendor.findById(req.user.id);
+			// Retrieve the authenticated vendor's ID
+			const vendorId = req.vendor.id;
+
+			// Validate vendor existence
+			const vendor = await Vendor.findById(vendorId);
 			if (!vendor) {
 				return res
 					.status(404)
 					.json({ error: 'Vendor not found' });
 			}
 
-			// Free-tier check
-			const serviceCount = await Service.countDocuments({
-				vendor: req.user.id,
-			});
-			if (
-				vendor.membershipTier === 'Free' &&
-				serviceCount >= 1
-			) {
-				return res.status(403).json({
-					error:
-						'Free tier can only list one service. Upgrade to Premium.',
-				});
-			}
-
-			// Extract form data
+			// Extract service details from the request body
 			const {
-				name,
-				description,
-				price,
 				category,
-				availability,
+				name,
+				shortDescription,
+				price,
+				duration,
 			} = req.body;
-			let items = JSON.parse(req.body.items || '[]'); // Parse items array from JSON string
-			let schedule = req.body.schedule
-				? JSON.parse(req.body.schedule)
-				: {}; // ✅ Parse schedule
 
-			if (!name || !category) {
+			// Validate required fields
+			if (!category || !name) {
 				return res.status(400).json({
-					error: 'Name and category are required',
+					error: 'Category and name are required.',
 				});
 			}
 
-			// Attach Cloudinary image URLs to items
-			const uploadedImages = req.files.map(
-				(file) => file.path,
-			); // Cloudinary provides URLs in `file.path`
-			items = items.map((item, index) => ({
-				...item,
-				image: uploadedImages[index] || null, // Assign each uploaded image to its respective item
+			// Process uploaded images
+			const images = req.files.map((file) => ({
+				url: file.path,
+				description: file.originalname, // Or any other description logic
 			}));
 
+			// Create a new service instance
 			const newService = new Service({
-				vendor: req.user.id,
-				name,
-				description,
-				price,
+				vendor: vendorId,
 				category,
-				items,
-				schedule, // ✅ Now it's correctly parsed
-				availability: availability ?? true,
+				name,
+				shortDescription,
+				price: price || undefined,
+				duration: duration || undefined,
+				images,
 			});
 
+			// Save the service to the database
 			await newService.save();
 
+			// Respond with the created service
 			res.status(201).json({
-				message: 'Service created successfully',
+				success: true,
+				message: 'Service added successfully',
 				service: newService,
 			});
 		} catch (error) {
-			console.error('Service Creation Error:', error);
-			res.status(500).json({
-				error: 'Failed to create service',
-				details: error.message,
-			});
+			console.error('Error adding service:', error);
+			res.status(500).json({ error: 'Server error' });
 		}
 	},
 );
+
 
 
 
