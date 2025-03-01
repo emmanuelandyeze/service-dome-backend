@@ -18,6 +18,25 @@ const ServiceSchema = new mongoose.Schema({
 	createdAt: { type: Date, default: Date.now },
 });
 
+const OpeningHoursSchema = new mongoose.Schema({
+	day: {
+		type: String,
+		enum: [
+			'Monday',
+			'Tuesday',
+			'Wednesday',
+			'Thursday',
+			'Friday',
+			'Saturday',
+			'Sunday',
+		],
+		required: true,
+	},
+	openingTime: { type: String, required: true }, // e.g., "09:00"
+	closingTime: { type: String, required: true }, // e.g., "17:00"
+	isClosed: { type: Boolean, default: false }, // If the vendor is closed on this day
+});
+
 const VendorSchema = new mongoose.Schema({
 	ownerName: { type: String, required: true },
 	email: { type: String, required: true, unique: true },
@@ -40,7 +59,7 @@ const VendorSchema = new mongoose.Schema({
 				name: { type: String, required: true }, // e.g., Food, Beauty, Fitness
 				slug: { type: String, required: true }, // e.g., food, beauty, fitness
 				image: { type: String }, // URL to the category image
-			}, // e.g., Food, Beauty, Fitness
+			},
 			businessName: { type: String, required: true },
 			logo: { type: String },
 			banner: { type: String },
@@ -61,6 +80,7 @@ const VendorSchema = new mongoose.Schema({
 				longitude: { type: Number },
 				address: { type: String },
 			},
+			openingHours: [OpeningHoursSchema], // Array of opening hours for each day
 			createdAt: { type: Date, default: Date.now },
 		},
 	],

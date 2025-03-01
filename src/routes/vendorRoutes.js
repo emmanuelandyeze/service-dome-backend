@@ -100,7 +100,40 @@ router.post(
 				});
 			}
 
-			console.log(req.body);
+			// ✅ Validate openingHours if provided
+			let openingHours = [];
+			if (req.body.openingHours) {
+				if (!Array.isArray(req.body.openingHours)) {
+					return res.status(400).json({
+						error: 'openingHours must be an array',
+					});
+				}
+
+				// Validate each day's opening hours
+				const validDays = [
+					'Monday',
+					'Tuesday',
+					'Wednesday',
+					'Thursday',
+					'Friday',
+					'Saturday',
+					'Sunday',
+				];
+				for (const entry of req.body.openingHours) {
+					if (!validDays.includes(entry.day)) {
+						return res.status(400).json({
+							error: `Invalid day: ${entry.day}`,
+						});
+					}
+					if (!entry.openingTime || !entry.closingTime) {
+						return res.status(400).json({
+							error: `Missing openingTime or closingTime for ${entry.day}`,
+						});
+					}
+				}
+
+				openingHours = req.body.openingHours;
+			}
 
 			// ✅ Create new page object
 			const newPage = {
@@ -112,6 +145,7 @@ router.post(
 					longitude: req.body.longitude || null,
 					address: req.body.address || '',
 				},
+				openingHours, // Add openingHours to the new page
 				logo: req.files?.logo ? req.files.logo[0].path : '',
 				banner: req.files?.banner
 					? req.files.banner[0].path
@@ -142,71 +176,6 @@ router.post(
 );
 
 /**
- * @route   GET /api/vendors/pages/:pageId
- * @desc    Fetch a single business page by its ID
- * @access  Public
- */
-router.get('/pages/:pageId', async (req, res) => {
-	try {
-		const { pageId } = req.params;
-
-		// Find the vendor that has the page
-		const vendor = await Vendor.findOne({
-			'pages._id': pageId,
-		})
-			.select('pages')
-			.lean();
-
-		if (!vendor) {
-			return res
-				.status(404)
-				.json({ error: 'Page not found' });
-		}
-
-		// Find the specific page
-		const page = vendor.pages.find(
-			(p) => p._id.toString() === pageId,
-		);
-
-		if (!page) {
-			return res
-				.status(404)
-				.json({ error: 'Page not found' });
-		}
-
-		// // Populate the category details for the page
-		// const category = await Category.findById(
-		// 	page.category,
-		// ).lean();
-		// if (category) {
-		// 	page.category = category;
-		// }
-
-		console.log(page.services);
-		// Populate the category details for each service
-		if (page.services && page.services.length > 0) {
-			page.services = await Promise.all(
-				page.services.map(async (service) => {
-					const serviceCategory = await Category.findById(
-						service.category,
-					).lean();
-					console.log(serviceCategory);
-					if (serviceCategory) {
-						service.category = serviceCategory; // Replace category ID with category object
-					}
-					return service;
-				}),
-			);
-		}
-
-		res.status(200).json(page);
-	} catch (error) {
-		console.error('Error fetching business page:', error);
-		res.status(500).json({ error: 'Server error' });
-	}
-});
-
-/**
  * @route   PUT /api/vendors/pages/:pageId
  * @desc    Update a specific business page
  * @access  Private (Vendor Only)
@@ -220,6 +189,7 @@ router.put(
 	]),
 	async (req, res) => {
 		try {
+			console.log(req.body);
 			const vendor = await Vendor.findById(req.vendor.id);
 			if (!vendor)
 				return res
@@ -231,8 +201,6 @@ router.put(
 				return res
 					.status(404)
 					.json({ error: 'Page not found' });
-
-			console.log(req.body.location);
 
 			// ✅ Handle image deletions from Cloudinary
 			if (req.files?.logo && page.logo) {
@@ -275,6 +243,61 @@ router.put(
 				};
 			}
 
+			// ✅ Update openingHours if provided
+			if (req.body.openingHours) {
+				console.log(
+					'Raw openingHours:',
+					req.body.openingHours,
+				);
+
+				try {
+					req.body.openingHours = JSON.parse(
+						req.body.openingHours,
+					); // ✅ Convert to array
+				} catch (error) {
+					return res.status(400).json({
+						error: 'Invalid JSON format for openingHours',
+					});
+				}
+
+				// Validate openingHours structure
+				if (!Array.isArray(req.body.openingHours)) {
+					return res.status(400).json({
+						error: 'openingHours must be an array',
+					});
+				}
+
+				// Validate each day's opening hours
+				const validDays = [
+					'Monday',
+					'Tuesday',
+					'Wednesday',
+					'Thursday',
+					'Friday',
+					'Saturday',
+					'Sunday',
+				];
+				for (const entry of req.body.openingHours) {
+					if (!validDays.includes(entry.day)) {
+						console.log(`Invalid day: ${entry.day}`);
+						return res
+							.status(400)
+							.json({ error: `Invalid day: ${entry.day}` });
+					}
+					if (!entry.openingTime || !entry.closingTime) {
+						console.log(
+							`Missing openingTime or closingTime for ${entry.day}`,
+						);
+						return res.status(400).json({
+							error: `Missing openingTime or closingTime for ${entry.day}`,
+						});
+					}
+				}
+
+				// ✅ Assign parsed array
+				page.openingHours = req.body.openingHours;
+			}
+
 			// ✅ Update images if provided
 			if (req.files?.logo)
 				page.logo = req.files.logo[0].path;
@@ -294,6 +317,62 @@ router.put(
 		}
 	},
 );
+
+/**
+ * @route   GET /api/vendors/pages/:pageId
+ * @desc    Fetch a single business page by its ID
+ * @access  Public
+ */
+router.get('/pages/:pageId', async (req, res) => {
+	try {
+		const { pageId } = req.params;
+
+		// Find the vendor that has the page
+		const vendor = await Vendor.findOne({
+			'pages._id': pageId,
+		})
+			.select('pages')
+			.lean();
+
+		if (!vendor) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// Find the specific page
+		const page = vendor.pages.find(
+			(p) => p._id.toString() === pageId,
+		);
+
+		if (!page) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// Populate the category details for each service
+		if (page.services && page.services.length > 0) {
+			page.services = await Promise.all(
+				page.services.map(async (service) => {
+					const serviceCategory = await Category.findById(
+						service.category,
+					).lean();
+					console.log(serviceCategory);
+					if (serviceCategory) {
+						service.category = serviceCategory; // Replace category ID with category object
+					}
+					return service;
+				}),
+			);
+		}
+
+		res.status(200).json(page);
+	} catch (error) {
+		console.error('Error fetching business page:', error);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
 
 /**
  * @route   GET /api/vendors/pages/:pageId/services
@@ -377,7 +456,7 @@ router.put('/profile', protectVendor, async (req, res) => {
 });
 
 /**
- * @route   GET /api/vendors/category
+ * @route   GET /api/vendors/pages/category
  * @desc    Fetch vendors by service category
  * @access  Public
  */
@@ -391,7 +470,7 @@ router.get('/category', async (req, res) => {
 
 		// Fetch vendors whose pages contain the requested category
 		const vendors = await Vendor.find({
-			'pages.category': category,
+			'pages.category.name': category,
 		}).select(
 			'pages.businessName pages.location pages.logo pages.reviews',
 		);

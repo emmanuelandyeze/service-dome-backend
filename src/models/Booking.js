@@ -6,17 +6,15 @@ const BookingSchema = new mongoose.Schema({
 		ref: 'Customer',
 		required: true,
 	},
-	service: {
+	pageId: {
 		type: mongoose.Schema.Types.ObjectId,
-		ref: 'Service',
 		required: true,
 	},
-	vendor: {
-		type: mongoose.Schema.Types.ObjectId,
-		ref: 'Vendor',
-		required: true,
-	},
-	date: { type: Date, required: true },
+	items: {},
+	totalPrice: { type: Number, required: true },
+	deliveryAddress: { type: String, required: true },
+	scheduledDate: { type: Date },
+	scheduledTime: { type: Date },
 	status: {
 		type: String,
 		enum: [
