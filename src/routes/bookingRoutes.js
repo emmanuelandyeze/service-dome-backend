@@ -1,6 +1,7 @@
 import express from 'express';
 import Booking from '../models/Booking.js';
 import { authMiddleware } from '../middlewares/authMiddleware.js';
+import Vendor from '../models/Vendor.js';
 
 const router = express.Router();
 
@@ -137,9 +138,26 @@ router.get('/', authMiddleware, async (req, res) => {
 		if (req.user.role === 'customer') {
 			query.customer = req.user.id;
 		}
-		// Vendors can only see bookings for their page
+		// Vendors can only see bookings for their pages
 		else if (req.user.role === 'vendor') {
-			query.pageId = req.user.id;
+			// Fetch the vendor document to access the pages array
+			const vendor = await Vendor.findById(req.user.id);
+			if (!vendor) {
+				return res
+					.status(404)
+					.json({ error: 'Vendor not found.' });
+			}
+
+			// If a specific page is selected, filter bookings for that page
+			if (req.query.pageId) {
+				query.pageId = req.query.pageId;
+			} else {
+				// If no page is selected, filter bookings for all pages of the vendor
+				const pageIds = vendor.pages.map(
+					(page) => page._id,
+				);
+				query.pageId = { $in: pageIds };
+			}
 		}
 		// Admins or other roles are not allowed
 		else {
@@ -149,17 +167,109 @@ router.get('/', authMiddleware, async (req, res) => {
 		}
 
 		// Fetch bookings
-		const bookings = await Booking.find(query)
-			.populate('customer', 'name email') // Populate customer details
-			.populate('pageId', 'name'); // Populate vendor details
+		const bookings = await Booking.find(query).populate(
+			'customer',
+			'name email',
+		); // Populate customer details
 
-		// Return the bookings
-		res.json(bookings);
+		// Fetch all vendors to search for page details
+		const vendors = await Vendor.find({});
+
+		// Map bookings to include full page details
+		const bookingsWithPageDetails = bookings.map(
+			(booking) => {
+				let pageDetails = null;
+
+				// Search through all vendors to find the page
+				for (const vendor of vendors) {
+					const page = vendor.pages.find(
+						(page) =>
+							page._id.toString() ===
+							booking.pageId.toString(),
+					);
+
+					if (page) {
+						pageDetails = page;
+						break; // Exit the loop once the page is found
+					}
+				}
+
+				return {
+					...booking.toObject(),
+					page: pageDetails, // Include full page details or null if not found
+				};
+			},
+		);
+
+		// Return the bookings with page details
+		res.json(bookingsWithPageDetails);
 	} catch (error) {
 		console.error('Error fetching bookings:', error);
 		res
 			.status(500)
 			.json({ error: 'Failed to fetch bookings.' });
+	}
+});
+
+// Get a single booking by ID
+router.get('/:id', authMiddleware, async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		// Find the booking
+		const booking = await Booking.findById(id)
+			.populate('customer', 'name email') // Populate customer details
+			.populate('pageId', 'name'); // Populate page details
+
+		if (!booking) {
+			return res
+				.status(404)
+				.json({ error: 'Booking not found.' });
+		}
+
+		// Check if the user is authorized to view the booking
+		if (
+			req.user.role === 'customer' &&
+			booking.customer._id.toString() !== req.user.id
+		) {
+			return res.status(403).json({
+				error:
+					'Unauthorized. You can only view your own bookings.',
+			});
+		}
+
+		// if (
+		// 	req.user.role === 'vendor' &&
+		// 	booking.pageId.toString() !== req.user.id
+		// ) {
+		// 	return res.status(403).json({
+		// 		error:
+		// 			'Unauthorized. You can only view bookings for your pages.',
+		// 	});
+		// }
+
+		// Fetch the vendor to get full page details
+		const vendor = await Vendor.findOne({
+			'pages._id': booking.pageId,
+		});
+		const pageDetails = vendor?.pages.find(
+			(page) =>
+				page._id.toString() === booking.pageId.toString(),
+		);
+
+		// Include full page details in the response
+		const bookingWithPageDetails = {
+			...booking.toObject(),
+			page: pageDetails || null,
+		};
+
+		// Return the booking with page details
+		res.json(bookingWithPageDetails);
+	} catch (error) {
+		console.error('Error fetching booking:', error);
+		res
+			.status(500)
+			.json({ error: 'Failed to fetch booking.' });
 	}
 });
 

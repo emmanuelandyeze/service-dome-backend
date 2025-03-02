@@ -14,9 +14,7 @@ import Stripe from 'stripe';
 dotenv.config();
 connectDB();
 
-const stripe = Stripe(
-	'sk_test_51QtR9JJQyoMlc0VwMOXz2cC9rp3cSSkRp0PSil6LglOKQ8i0NMxTRFchcKZLBHlXj66zmWwU8RWRguqSzmVnpUuq00m9CQfgyb',
-);
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());

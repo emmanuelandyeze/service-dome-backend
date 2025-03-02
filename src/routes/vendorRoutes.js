@@ -627,4 +627,127 @@ router.get(
 	},
 );
 
+/**
+ * @route   POST /api/vendors/pages/:pageId/reviews
+ * @desc    Add a review to a specific page
+ * @access  Public
+ */
+router.post('/pages/:pageId/reviews', async (req, res) => {
+	const { pageId } = req.params;
+	const { customerId, rating, comment } = req.body;
+
+	try {
+		// Find the vendor that has the specified page
+		const vendor = await Vendor.findOne({
+			'pages._id': pageId,
+		});
+		if (!vendor) {
+			return res
+				.status(404)
+				.json({ error: 'Vendor not found' });
+		}
+
+		// Find the specific page by ID
+		const page = vendor.pages.id(pageId);
+		if (!page) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// Create a new review
+		const newReview = {
+			customer: customerId,
+			rating,
+			comment,
+		};
+
+		// Add the review to the page's reviews array
+		page.reviews.push(newReview);
+
+		// Save the updated vendor document
+		await vendor.save();
+
+		res.status(201).json({
+			success: true,
+			message: 'Review added successfully',
+			review: newReview,
+		});
+	} catch (error) {
+		console.error('Error adding review:', error);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+
+/**
+ * @route   GET /api/vendors/pages/:pageId/reviews
+ * @desc    Fetch all reviews for a specific page
+ * @access  Public
+ */
+router.get('/pages/:pageId/reviews', async (req, res) => {
+	const { pageId } = req.params;
+
+	try {
+		// Find the vendor that has the specified page
+		const vendor = await Vendor.findOne({
+			'pages._id': pageId,
+		});
+		if (!vendor) {
+			return res
+				.status(404)
+				.json({ error: 'Vendor not found' });
+		}
+
+		// Find the specific page by ID
+		const page = vendor.pages.id(pageId);
+		if (!page) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// Return the reviews for the page
+		res.status(200).json({
+			success: true,
+			reviews: page.reviews,
+		});
+	} catch (error) {
+		console.error('Error fetching reviews:', error);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+
+/**
+ * @route   GET /api/vendors/:vendorId/reviews
+ * @desc    Fetch all reviews for all pages of a vendor
+ * @access  Public
+ */
+router.get('/:vendorId/reviews', async (req, res) => {
+	const { vendorId } = req.params;
+
+	try {
+		// Find the vendor by ID
+		const vendor = await Vendor.findById(vendorId);
+		if (!vendor) {
+			return res
+				.status(404)
+				.json({ error: 'Vendor not found' });
+		}
+
+		// Extract all reviews from all pages
+		const allReviews = vendor.pages.flatMap(
+			(page) => page.reviews,
+		);
+
+		res.status(200).json({
+			success: true,
+			reviews: allReviews,
+		});
+	} catch (error) {
+		console.error('Error fetching reviews:', error);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+
+
 export default router;
