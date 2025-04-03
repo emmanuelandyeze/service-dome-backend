@@ -202,26 +202,6 @@ router.put(
 					.status(404)
 					.json({ error: 'Page not found' });
 
-			// ✅ Handle image deletions from Cloudinary
-			if (req.files?.logo && page.logo) {
-				const publicId = page.logo
-					.split('/')
-					.pop()
-					.split('.')[0];
-				await cloudinary.uploader.destroy(
-					`service_dome/vendors/${publicId}`,
-				);
-			}
-
-			if (req.files?.banner && page.banner) {
-				const publicId = page.banner
-					.split('/')
-					.pop()
-					.split('.')[0];
-				await cloudinary.uploader.destroy(
-					`service_dome/vendors/${publicId}`,
-				);
-			}
 
 			// ✅ Update page details only if provided
 			if (req.body.businessName)
