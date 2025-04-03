@@ -1,55 +1,7 @@
 import jwt from 'jsonwebtoken';
-import Vendor from '../models/Vendor.js';
-import Customer from '../models/Customer.js';
+import User from '../models/User.js';
 
-const authMiddleware = (req, res, next) => {
-	const token = req.header('Authorization')?.split(' ')[1];
-	if (!token)
-		return res
-			.status(401)
-			.json({ error: 'No token, authorization denied' });
-
-	try {
-		const decoded = jwt.verify(
-			token,
-			process.env.JWT_SECRET,
-		);
-		req.user = decoded;
-		next();
-	} catch (error) {
-		res.status(401).json({ error: 'Invalid token' });
-	}
-};
-
-const protectVendor = async (req, res, next) => {
-	try {
-		const token = req.headers.authorization?.split(' ')[1];
-		if (!token)
-			return res
-				.status(401)
-				.json({ error: 'Not authorized' });
-
-		const decoded = jwt.verify(
-			token,
-			process.env.JWT_SECRET,
-		);
-		console.log(decoded);
-		req.vendor = await Vendor.findById(decoded.id).select(
-			'-password',
-		);
-
-		if (!req.vendor)
-			return res
-				.status(401)
-				.json({ error: 'Vendor not found' });
-
-		next();
-	} catch (error) {
-		res.status(401).json({ error: 'Unauthorized' });
-	}
-};
-
-const protectCustomer = async (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
 	try {
 		const token = req
 			.header('Authorization')
@@ -58,24 +10,23 @@ const protectCustomer = async (req, res, next) => {
 		if (!token) {
 			return res
 				.status(401)
-				.json({ error: 'Unauthorized' });
+				.json({ error: 'No token, authorization denied' });
 		}
 
 		const decoded = jwt.verify(
 			token,
 			process.env.JWT_SECRET,
 		);
-		const customer = await Customer.findById(
-			decoded.id,
-		).select('-password');
+		req.user = await User.findById(decoded.id).select(
+			'-password',
+		);
 
-		if (!customer) {
+		if (!req.user) {
 			return res
 				.status(401)
-				.json({ error: 'Unauthorized' });
+				.json({ error: 'User not found' });
 		}
 
-		req.customer = customer;
 		next();
 	} catch (error) {
 		console.error('Auth error:', error);
@@ -83,4 +34,49 @@ const protectCustomer = async (req, res, next) => {
 	}
 };
 
-export { authMiddleware, protectVendor, protectCustomer };
+const protectVendor = async (req, res, next) => {
+	try {
+		if (!req.user || !req.user.roles.includes('Vendor')) {
+			return res
+				.status(403)
+				.json({ error: 'Access denied. Vendor only.' });
+		}
+		req.vendor = req.user; // Assign the user as a vendor
+		next();
+	} catch (error) {
+		console.error('Vendor auth error:', error);
+		res.status(401).json({ error: 'Unauthorized' });
+	}
+};
+
+const protectCustomer = async (req, res, next) => {
+	try {
+		if (!req.user || !req.user.roles.includes('Customer')) {
+			return res
+				.status(403)
+				.json({ error: 'Access denied. Customer only.' });
+		}
+		req.customer = req.user; // Assign the user as a customer
+		next();
+	} catch (error) {
+		console.error('Customer auth error:', error);
+		res.status(401).json({ error: 'Unauthorized' });
+	}
+};
+
+const authorizeRoles = (...roles) => {
+	return (req, res, next) => {
+		if (!roles.includes(req.user.role)) {
+			res.status(403);
+			throw new Error('Not authorized for this action');
+		}
+		next();
+	};
+};
+
+export {
+	authMiddleware,
+	protectVendor,
+	protectCustomer,
+	authorizeRoles,
+};

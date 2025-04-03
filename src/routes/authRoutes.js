@@ -1,82 +1,66 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import Customer from '../models/Customer.js';
-import Vendor from '../models/Vendor.js';
+import User from '../models/User.js';
 
 const router = express.Router();
 
-// Register Customer
-router.post('/register/customer', async (req, res) => {
+// Register User (Customer or Vendor)
+router.post('/register', async (req, res) => {
 	try {
-		const { name, email, password, phone } = req.body;
+		const { name, email, password, phone, isVendor } =
+			req.body;
+
+		// Check if user already exists
+		const existingUser = await User.findOne({ email });
+		if (existingUser) {
+			return res
+				.status(400)
+				.json({ error: 'Email already in use' });
+		}
+
+		// Hash password
 		const hashedPassword = await bcrypt.hash(password, 10);
-		const customer = new Customer({
+
+		// Set roles dynamically
+		const roles = ['Customer'];
+		if (isVendor) roles.push('Vendor');
+
+		// Create new user
+		const user = new User({
 			name,
 			email,
 			password: hashedPassword,
 			phone,
-			role: 'customer',
+			roles,
 		});
-		await customer.save();
+		await user.save();
 
+		// Generate JWT token
 		const token = jwt.sign(
-			{ id: customer._id, role: 'customer' },
+			{ id: user._id, roles },
 			process.env.JWT_SECRET,
 			{ expiresIn: '7d' },
 		);
 
 		res.status(201).json({
 			token,
-			user: customer,
-			role: 'customer',
-			message: 'Customer registered successfully',
+			user,
+			message: 'Registration successful',
 		});
 	} catch (error) {
+		console.error(error);
 		res.status(500).json({ error: 'Registration failed' });
 	}
 });
 
-// Register Vendor
-router.post('/register/vendor', async (req, res) => {
-	try {
-		const { ownerName, email, password, phone } = req.body;
-		const hashedPassword = await bcrypt.hash(password, 10);
-		const vendor = new Vendor({
-			ownerName,
-			email,
-			password: hashedPassword,
-			phone,
-			role: 'vendor',
-		});
-		await vendor.save();
-
-		const token = jwt.sign(
-			{ id: vendor._id, role: 'vendor' },
-			process.env.JWT_SECRET,
-			{ expiresIn: '7d' },
-		);
-
-		res.status(201).json({
-			token,
-			user: vendor,
-			role: 'vendor',
-			message: 'Vendor registered successfully',
-		});
-	} catch (error) {
-		res.status(500).json({ error: 'Registration failed' });
-	}
-});
-
-// Login
+// Login User
 router.post('/login', async (req, res) => {
 	try {
-		const { email, password, role } = req.body;
-		const User = role === 'vendor' ? Vendor : Customer;
+		const { email, password } = req.body;
+
+		// Find user by email
 		const user = await User.findOne({ email });
-
-		console.log(user);
-
 		if (
 			!user ||
 			!(await bcrypt.compare(password, user.password))
@@ -86,18 +70,20 @@ router.post('/login', async (req, res) => {
 				.json({ error: 'Invalid credentials' });
 		}
 
+		// Generate JWT token
 		const token = jwt.sign(
-			{ id: user._id, role },
+			{ id: user._id, roles: user.roles },
 			process.env.JWT_SECRET,
 			{ expiresIn: '7d' },
 		);
+
 		res.json({
 			token,
-			role,
 			user,
 			message: 'Login successful',
 		});
 	} catch (error) {
+		console.error(error);
 		res.status(500).json({ error: 'Login failed' });
 	}
 });
