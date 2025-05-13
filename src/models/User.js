@@ -1,5 +1,34 @@
 import mongoose from 'mongoose';
 
+const TimeSlotSchema = new mongoose.Schema({
+	date: { type: Date, required: true }, // Specific day
+	startTime: { type: String, required: true }, // e.g., "09:00"
+	endTime: { type: String, required: true }, // e.g., "09:30"
+	status: {
+		type: String,
+		enum: ['Available', 'Blocked', 'Booked'],
+		default: 'Available',
+	},
+	blockReason: { type: String }, // Reason for blocking (if any)
+});
+
+const DeliverySettingsSchema = new mongoose.Schema({
+	enabled: { type: Boolean, default: false }, // Delivery enabled or not
+	fixedFee: { type: Number, min: 0, default: 0 }, // Fixed delivery fee
+	distanceBased: { type: Boolean, default: false }, // Charge based on distance
+	rates: [
+		{ distance: { type: Number }, fee: { type: Number } },
+	], // Rate per km
+	availableZones: [{ type: String }], // Delivery areas
+	estimatedTime: { type: String }, // Estimated delivery time
+	selfPickup: {
+		// Self-pickup settings
+		enabled: { type: Boolean, default: false }, // Self-pickup available or not
+		location: { type: String }, // Pickup address
+		instructions: { type: String }, // Instructions for pickup
+	},
+});
+
 const ServiceSchema = new mongoose.Schema({
 	name: { type: String, required: true },
 	category: {
@@ -13,6 +42,21 @@ const ServiceSchema = new mongoose.Schema({
 	images: [{ url: { type: String } }],
 	createdAt: { type: Date, default: Date.now },
 });
+
+const NotificationSchema = new mongoose.Schema(
+	{
+		type: {
+			type: String,
+			enum: ['job', 'payment', 'withdrawal', 'alert'],
+			required: true,
+		},
+		title: { type: String, required: true },
+		message: { type: String, required: true },
+		time: { type: Date, default: Date.now }, // Save actual time
+		read: { type: Boolean, default: false },
+	},
+	{ _id: false },
+);
 
 const OpeningHoursSchema = new mongoose.Schema({
 	day: {
@@ -40,6 +84,7 @@ const PageSchema = new mongoose.Schema({
 		image: { type: String },
 	},
 	businessName: { type: String, required: true },
+	about: { type: String },
 	logo: { type: String },
 	banner: { type: String },
 	services: [ServiceSchema],
@@ -60,6 +105,8 @@ const PageSchema = new mongoose.Schema({
 		address: { type: String },
 	},
 	openingHours: [OpeningHoursSchema],
+	timeSlots: [TimeSlotSchema],
+	deliverySettings: DeliverySettingsSchema,
 	createdAt: { type: Date, default: Date.now },
 });
 
@@ -73,6 +120,8 @@ const UserSchema = new mongoose.Schema({
 		enum: ['Customer', 'Vendor'],
 		required: true,
 	},
+	isVendor: { type: Boolean, default: false },
+	notifications: [NotificationSchema],
 
 	// Customer-Specific Fields
 	customerProfile: {
@@ -98,14 +147,18 @@ const UserSchema = new mongoose.Schema({
 		},
 		pages: [PageSchema],
 	},
+	expoPushToken: { type: String },
 
 	createdAt: { type: Date, default: Date.now },
 });
 
 // Restrict free-tier vendors to one business page
 UserSchema.pre('save', function (next) {
+	this.isVendor = this.roles.includes('Vendor');
+
+	// Keep your existing logic for free-tier restriction
 	if (
-		this.roles.includes('Vendor') &&
+		this.isVendor &&
 		this.vendorProfile.membershipTier === 'Free' &&
 		this.vendorProfile.pages.length > 1
 	) {
@@ -114,7 +167,29 @@ UserSchema.pre('save', function (next) {
 		);
 		return next(err);
 	}
+
 	next();
 });
+
+UserSchema.methods.toJSON = function () {
+	const userObject = this.toObject();
+
+	// Guard against undefined roles
+	const roles = userObject.roles || [];
+
+	if (!roles.includes('Vendor')) {
+		delete userObject.vendorProfile;
+	}
+	if (!roles.includes('Customer')) {
+		delete userObject.customerProfile;
+	}
+
+	delete userObject.password; // optionally hide password too
+
+	return userObject;
+};
+
+
+
 
 export default mongoose.model('User', UserSchema);

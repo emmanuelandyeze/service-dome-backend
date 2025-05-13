@@ -10,6 +10,8 @@ import bookingRoutes from './routes/bookingRoutes.js';
 import vendorRoutes from './routes/vendorRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import notificationsRoutes from './routes/notificationsRoutes.js';
+import deliveryRoutes from './routes/deliveryRoutes.js';
 import Stripe from 'stripe';
 
 dotenv.config();
@@ -29,6 +31,8 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/delivery', deliveryRoutes);
 
 app.get('/', (req, res) => {
 	res.send('Service Dome API is running....');

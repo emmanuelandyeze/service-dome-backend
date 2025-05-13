@@ -1,19 +1,15 @@
 import express from 'express';
 import Booking from '../models/Booking.js';
-import { authMiddleware } from '../middlewares/authMiddleware.js';
 import Vendor from '../models/Vendor.js';
+import { verifyToken } from '../middlewares/authMiddleware.js';
+import User from '../models/User.js';
+import { addNotification } from '../utils/addNotification.js';
 
 const router = express.Router();
 
 // Create a booking
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
 	try {
-		if (req.user.role !== 'customer') {
-			return res.status(403).json({
-				error: 'Only customers can create bookings.',
-			});
-		}
-
 		const {
 			pageId,
 			items,
@@ -47,7 +43,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 		// Create the booking
 		const booking = new Booking({
-			customer: req.user.id, // Customer ID from authenticated user
+			customer: req.user.userId, // Customer ID from authenticated user
 			pageId, // Vendor ID
 			items, // Array of items (services) with quantities and prices
 			totalPrice, // Total price of the booking
@@ -60,6 +56,40 @@ router.post('/', authMiddleware, async (req, res) => {
 
 		// Save the booking to the database
 		await booking.save();
+
+		// Fetch vendor details based on pageId
+		const vendor = await User.findOne({
+			'vendorProfile.pages._id': pageId,
+		});
+
+		if (!vendor) {
+			return res.status(404).json({
+				error: 'Vendor not found for this pageId',
+			});
+		}
+
+		const vendorId = vendor._id;
+
+		// Extract the names of the items in the booking
+		const itemNames = items.map((item) => item.name); // Assuming the item has a 'name' field
+
+		// Construct the notification message
+		let message = '';
+		if (itemNames.length === 1) {
+			message = `You’ve been requested for a ${itemNames[0]} service.`;
+		} else {
+			message = `You’ve been requested for a ${itemNames[0]} and other services.`;
+		}
+
+		// Add the notification
+		await addNotification({
+			userId: vendorId,
+			notification: {
+				type: 'job',
+				title: 'New Job Request',
+				message,
+			},
+		});
 
 		// Return the created booking
 		res.status(201).json({
@@ -75,133 +105,110 @@ router.post('/', authMiddleware, async (req, res) => {
 	}
 });
 
-// Update booking status (e.g., Confirmed, Cancelled, Completed)
-router.put(
-	'/:id/status',
-	authMiddleware,
-	async (req, res) => {
-		try {
-			const { id } = req.params;
-			const { status } = req.body;
+// // Update booking status (e.g., Confirmed, Cancelled, Completed)
+router.put('/:id/status', verifyToken, async (req, res) => {
+	try {
+		const { id } = req.params;
+		const { status } = req.body;
 
-			// Validate status
-			if (
-				!['Confirmed', 'Cancelled', 'Completed'].includes(
-					status,
-				)
-			) {
-				return res
-					.status(400)
-					.json({ error: 'Invalid status.' });
-			}
-
-			// Find the booking
-			const booking = await Booking.findById(id);
-			if (!booking) {
-				return res
-					.status(404)
-					.json({ error: 'Booking not found.' });
-			}
-
-			// Check if the user is the vendor associated with the booking
-			if (booking.pageId.toString() !== req.user.id) {
-				return res.status(403).json({
-					error:
-						'Unauthorized. Only the vendor can update the status.',
-				});
-			}
-
-			// Update the status
-			booking.status = status;
-			await booking.save();
-
-			// Return the updated booking
-			res.json(booking);
-		} catch (error) {
-			console.error(
-				'Error updating booking status:',
-				error,
-			);
-			res.status(500).json({
-				error: 'Failed to update booking status.',
-			});
+		// Validate status
+		if (
+			!['Confirmed', 'Cancelled', 'Completed'].includes(
+				status,
+			)
+		) {
+			return res
+				.status(400)
+				.json({ error: 'Invalid status.' });
 		}
-	},
-);
 
-// Get all bookings for the authenticated user
-router.get('/', authMiddleware, async (req, res) => {
+		// Find the booking
+		const booking = await Booking.findById(id);
+		if (!booking) {
+			return res
+				.status(404)
+				.json({ error: 'Booking not found.' });
+		}
+
+		// Update the status
+		booking.status = status;
+		await booking.save();
+
+		// Return the updated booking
+		res.json(booking);
+	} catch (error) {
+		console.error('Error updating booking status:', error);
+		res.status(500).json({
+			error: 'Failed to update booking status.',
+		});
+	}
+});
+
+// // Get all bookings for the authenticated user
+router.get('/', verifyToken, async (req, res) => {
 	try {
 		let query = {};
 
-		// Customers can only see their own bookings
-		if (req.user.role === 'customer') {
-			query.customer = req.user.id;
-		}
-		// Vendors can only see bookings for their pages
-		else if (req.user.role === 'vendor') {
-			// Fetch the vendor document to access the pages array
-			const vendor = await Vendor.findById(req.user.id);
+		if (req.query.customer) {
+			if (req.query.customer !== req.user.userId) {
+				return res
+					.status(403)
+					.json({ error: 'Unauthorized.' });
+			}
+			query.customer = req.query.customer;
+		} else if (req.query.pageId) {
+			// Ensure vendor owns this page
+			const vendor = await User.findById(req.user.userId);
 			if (!vendor) {
 				return res
 					.status(404)
 					.json({ error: 'Vendor not found.' });
 			}
 
-			// If a specific page is selected, filter bookings for that page
-			if (req.query.pageId) {
-				query.pageId = req.query.pageId;
-			} else {
-				// If no page is selected, filter bookings for all pages of the vendor
-				const pageIds = vendor.pages.map(
-					(page) => page._id,
-				);
-				query.pageId = { $in: pageIds };
+			const isPageOwner = vendor.vendorProfile.pages.some(
+				(page) => page._id.toString() === req.query.pageId,
+			);
+
+			if (!isPageOwner) {
+				return res
+					.status(403)
+					.json({ error: 'Unauthorized page access.' });
 			}
-		}
-		// Admins or other roles are not allowed
-		else {
+
+			query.pageId = req.query.pageId;
+		} else {
 			return res
-				.status(403)
-				.json({ error: 'Unauthorized.' });
+				.status(400)
+				.json({ error: 'Missing query parameters.' });
 		}
 
 		// Fetch bookings
 		const bookings = await Booking.find(query).populate(
 			'customer',
 			'name email',
-		); // Populate customer details
+		);
 
-		// Fetch all vendors to search for page details
-		const vendors = await Vendor.find({});
+		// Now find the vendor and page for each booking
+		const bookingsWithPageDetails = await Promise.all(
+			bookings.map(async (booking) => {
+				const pageOwner = await User.findOne({
+					'vendorProfile.pages._id': booking.pageId,
+				});
 
-		// Map bookings to include full page details
-		const bookingsWithPageDetails = bookings.map(
-			(booking) => {
-				let pageDetails = null;
-
-				// Search through all vendors to find the page
-				for (const vendor of vendors) {
-					const page = vendor.pages.find(
-						(page) =>
-							page._id.toString() ===
+				const pageDetails =
+					pageOwner?.vendorProfile?.pages.find(
+						(p) =>
+							p._id.toString() ===
 							booking.pageId.toString(),
 					);
 
-					if (page) {
-						pageDetails = page;
-						break; // Exit the loop once the page is found
-					}
-				}
-
 				return {
 					...booking.toObject(),
-					page: pageDetails, // Include full page details or null if not found
+					page: pageDetails || null,
 				};
-			},
+			}),
 		);
 
-		// Return the bookings with page details
 		res.json(bookingsWithPageDetails);
 	} catch (error) {
 		console.error('Error fetching bookings:', error);
@@ -211,14 +218,14 @@ router.get('/', authMiddleware, async (req, res) => {
 	}
 });
 
-// Get a single booking by ID
-router.get('/:id', authMiddleware, async (req, res) => {
+// // Get a single booking by ID
+router.get('/:id', verifyToken, async (req, res) => {
 	try {
 		const { id } = req.params;
 
 		// Find the booking
 		const booking = await Booking.findById(id)
-			.populate('customer', 'name email') // Populate customer details
+			.populate('customer', 'name email phone') // Populate customer details
 			.populate('pageId', 'name'); // Populate page details
 
 		if (!booking) {
@@ -227,32 +234,12 @@ router.get('/:id', authMiddleware, async (req, res) => {
 				.json({ error: 'Booking not found.' });
 		}
 
-		// Check if the user is authorized to view the booking
-		if (
-			req.user.role === 'customer' &&
-			booking.customer._id.toString() !== req.user.id
-		) {
-			return res.status(403).json({
-				error:
-					'Unauthorized. You can only view your own bookings.',
-			});
-		}
-
-		// if (
-		// 	req.user.role === 'vendor' &&
-		// 	booking.pageId.toString() !== req.user.id
-		// ) {
-		// 	return res.status(403).json({
-		// 		error:
-		// 			'Unauthorized. You can only view bookings for your pages.',
-		// 	});
-		// }
-
 		// Fetch the vendor to get full page details
-		const vendor = await Vendor.findOne({
-			'pages._id': booking.pageId,
+		const vendor = await User.findOne({
+			'vendorProfile.pages._id': booking.pageId,
 		});
-		const pageDetails = vendor?.pages.find(
+
+		const pageDetails = vendor?.vendorProfile?.pages?.find(
 			(page) =>
 				page._id.toString() === booking.pageId.toString(),
 		);

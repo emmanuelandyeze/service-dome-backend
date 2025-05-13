@@ -5,24 +5,15 @@ import {
 	deleteUser,
 	getAllUsers,
 } from '../controllers/userController.js';
-import {
-	protectVendor,
-	authorizeRoles,
-} from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // Protected routes
-router.get('/profile', protectVendor, getUserProfile);
-router.put('/profile', protectVendor, updateUserProfile);
-router.delete('/profile', protectVendor, deleteUser);
+router.get('/profile', getUserProfile);
+router.put('/profile', updateUserProfile);
+router.delete('/profile', deleteUser);
 
 // Admin-only routes
-router.get(
-	'/',
-	protectVendor,
-	authorizeRoles('admin'),
-	getAllUsers,
-);
+router.get('/', getAllUsers);
 
 export default router;
