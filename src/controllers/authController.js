@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js'; // Adjust path if needed
+import User from '../models/User.js';
+import Page from '../models/Page.js';
 
 const JWT_SECRET =
-	process.env.JWT_SECRET; // Store in .env
+	process.env.JWT_SECRET || 'defaultsecret';
 
 // Signup Controller
 export const signup = async (req, res) => {
@@ -36,7 +37,6 @@ export const signup = async (req, res) => {
 			newUser.vendorProfile = {
 				membershipTier: 'Free',
 				subscriptionStatus: 'Expired',
-				pages: [],
 			};
 		} else if (roles.includes('Customer')) {
 			newUser.customerProfile = {
@@ -58,18 +58,20 @@ export const signup = async (req, res) => {
 			{ expiresIn: '7d' },
 		);
 
-		res.status(201).json({ token, user: newUser, success: true });
+		res
+			.status(201)
+			.json({ token, user: newUser, success: true });
 	} catch (error) {
 		console.error(error);
 		res.status(500).json({ message: 'Signup failed' });
 	}
 };
 
-// Login Controller
 export const login = async (req, res) => {
 	try {
 		const { email, password } = req.body;
 
+		// Find user by email
 		const user = await User.findOne({ email });
 		if (!user) {
 			return res
@@ -77,6 +79,7 @@ export const login = async (req, res) => {
 				.json({ message: 'User not found' });
 		}
 
+		// Check password
 		const isMatch = await bcrypt.compare(
 			password,
 			user.password,
@@ -87,13 +90,23 @@ export const login = async (req, res) => {
 				.json({ message: 'Invalid credentials' });
 		}
 
+		// If the user is a vendor, fetch pages from the Page model
+		let pages = [];
+		if (user.isVendor) {
+			pages = await Page.find({ vendor: user._id });
+		}
+
+		// Generate token
 		const token = jwt.sign(
 			{ userId: user._id, roles: user.roles },
 			JWT_SECRET,
 			{ expiresIn: '7d' },
 		);
 
-		res.status(200).json({ token, user, status: 'ok' });
+		// Return user info along with pages (if vendor)
+		res
+			.status(200)
+			.json({ token, user, pages, success: true });
 	} catch (error) {
 		console.error(error);
 		res.status(500).json({ message: 'Login failed' });

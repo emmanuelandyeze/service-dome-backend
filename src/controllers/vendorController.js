@@ -1,6 +1,8 @@
 import Category from '../models/Category.js';
 import Service from '../models/Service.js';
 import User from '../models/User.js';
+import Page from '../models/Page.js';
+import mongoose from 'mongoose';
 
 export const getAllVendors = async (req, res) => {
 	try {
@@ -9,22 +11,43 @@ export const getAllVendors = async (req, res) => {
 		// Base filter: Only vendors
 		let query = { isVendor: true };
 
-		// Add filters for nested vendorProfile.pages
-		if (category) {
-			query['vendorProfile.pages.category.name'] = category;
-		}
-
-		if (trending === 'true') {
-			query['vendorProfile.pages.trending'] = true; // Make sure you actually have a `trending` field in PageSchema
-		}
-
+		// Find vendors matching the base query
 		const vendors = await User.find(query).select(
 			'-password',
 		);
 
-		res.status(200).json(vendors);
+		// Get vendor IDs
+		const vendorIds = vendors.map((vendor) => vendor._id);
+
+		// Page filter
+		let pageQuery = { vendor: { $in: vendorIds } };
+
+		if (category) {
+			pageQuery['category.name'] = category;
+		}
+
+		if (trending === 'true') {
+			pageQuery['trending'] = true; // Ensure that `trending` exists in the new Page schema
+		}
+
+		// Find pages associated with the filtered vendors
+		const pages = await Page.find(pageQuery).populate(
+			'vendor',
+			'-password',
+		);
+
+		// Combine vendor details with their respective pages
+		const vendorData = vendors.map((vendor) => {
+			const vendorPages = pages.filter(
+				(page) =>
+					page.vendor.toString() === vendor._id.toString(),
+			);
+			return { ...vendor.toObject(), pages: vendorPages };
+		});
+
+		res.status(200).json(vendorData);
 	} catch (error) {
-		console.error('Error fetching vendor users:', error);
+		console.error('Error fetching vendors:', error);
 		res.status(500).json({ error: 'Server error' });
 	}
 };
@@ -34,25 +57,32 @@ export const getAllVendorsPages = async (req, res) => {
 		// Fetch all users who are vendors
 		const vendors = await User.find({
 			isVendor: true,
-		}).select('vendorProfile.pages');
+		}).select('_id');
 
-		// Flatten all pages from all vendors
-		const allPages = vendors.flatMap((vendor) =>
-			vendor.vendorProfile.pages.map((page) => ({
-				vendorId: vendor._id,
-				pageId: page._id,
-				businessName: page.businessName,
-				category: page.category,
-				logo: page.logo,
-				banner: page.banner,
-				location: page.location,
-				storePolicies: page.storePolicies,
-				reviews: page.reviews,
-				services: page.services,
-			})),
-		);
+		// Extract vendor IDs
+		const vendorIds = vendors.map((vendor) => vendor._id);
 
-		res.status(200).json(allPages);
+		// Fetch all pages associated with the vendor IDs
+		const allPages = await Page.find({
+			vendor: { $in: vendorIds },
+		}).populate('vendor', 'name');
+
+		// Format the response
+		const formattedPages = allPages.map((page) => ({
+			vendorId: page.vendor._id,
+			vendorName: page.vendor.name,
+			pageId: page._id,
+			businessName: page.businessName,
+			category: page.category,
+			logo: page.logo,
+			banner: page.banner,
+			location: page.location,
+			storePolicies: page.storePolicies,
+			reviews: page.reviews,
+			services: page.services,
+		}));
+
+		res.status(200).json(formattedPages);
 	} catch (error) {
 		console.error('Error fetching vendor pages:', error);
 		res.status(500).json({ error: 'Server error' });
@@ -61,6 +91,7 @@ export const getAllVendorsPages = async (req, res) => {
 
 export const createBusinessPage = async (req, res) => {
 	try {
+		// Fetch the vendor user
 		const vendor = await User.findById(req.user.userId);
 		if (!vendor || !vendor.isVendor) {
 			return res.status(404).json({
@@ -69,9 +100,13 @@ export const createBusinessPage = async (req, res) => {
 		}
 
 		// Enforce membership tier page limit
+		const existingPagesCount = await Page.countDocuments({
+			vendor: vendor._id,
+		});
+
 		if (
 			vendor.vendorProfile.membershipTier === 'Free' &&
-			vendor.vendorProfile.pages.length >= 1
+			existingPagesCount >= 1
 		) {
 			return res.status(403).json({
 				error:
@@ -115,7 +150,6 @@ export const createBusinessPage = async (req, res) => {
 						.json({ error: `Invalid day: ${entry.day}` });
 				}
 				if (!entry.openingTime || !entry.closingTime) {
-					// Fixed typo: closingTime -> closingTime
 					return res.status(400).json({
 						error: `Missing openingTime or closingTime for ${entry.day}`,
 					});
@@ -138,8 +172,9 @@ export const createBusinessPage = async (req, res) => {
 			});
 		}
 
-		// Build new page object
-		const newPage = {
+		// Create new page object
+		const newPage = new Page({
+			vendor: vendor._id,
 			category: category,
 			businessName: req.body.businessName,
 			storePolicies: req.body.storePolicies,
@@ -155,69 +190,74 @@ export const createBusinessPage = async (req, res) => {
 				: '',
 			services: [],
 			reviews: [],
-		};
+		});
 
-		// Push page to vendorProfile.pages
-		vendor.vendorProfile.pages.push(newPage);
+		// Save the new page
+		await newPage.save();
+
+		// Push the new page ID into the vendor's vendorProfile.pages array
+		vendor.vendorProfile.pages.push(newPage._id);
 		await vendor.save();
 
 		res.status(201).json({
 			success: true,
 			message: 'Business page created successfully',
 			page: newPage,
-			vendor: vendor,
 		});
 	} catch (error) {
 		console.error('Error creating business page:', error);
 		res.status(500).json({ error: 'Server error' });
 	}
 };
+  
 
 export const updateBusinessPage = async (req, res) => {
 	try {
-		const vendor = await User.findById(req.user.userId); // Ensure auth middleware sets req.user
-
-		if (!vendor || !vendor.isVendor) { 
-			return res
-				.status(404)
-				.json({
-					error: 'Vendor not found or unauthorized',
-				});
+		// Find the vendor user
+		const vendor = await User.findById(req.user.userId);
+		if (!vendor || !vendor.isVendor) {
+			return res.status(404).json({
+				error: 'Vendor not found or unauthorized',
+			});
 		}
 
-		// Find the page
-		const page = vendor.vendorProfile.pages.id(
-			req.params.pageId,
-		);
+		// Find the page by ID
+		const page = await Page.findById(req.params.pageId);
 		if (!page) {
 			return res
 				.status(404)
 				.json({ error: 'Page not found' });
 		}
 
-		// ✅ Update basic fields
+		// Verify the vendor owns the page
+		if (page.vendor.toString() !== vendor._id.toString()) {
+			return res.status(403).json({
+				error: 'Unauthorized to update this page',
+			});
+		}
+
+		// Update basic fields if provided
 		if (req.body.businessName)
 			page.businessName = req.body.businessName;
 		if (req.body.storePolicies)
 			page.storePolicies = req.body.storePolicies;
 		if (req.body.about) page.about = req.body.about;
 
-		// ✅ Update services
-
-		// ✅ Update category if provided
+		// Update category if provided
 		if (req.body.category) {
 			try {
-				page.category = JSON.parse(req.body.category); // category: { name, slug, image }
-			} catch (err) {
-				return res
-					.status(400)
-					.json({
-						error: 'Invalid category format. Must be JSON.',
-					});
+				page.category =
+					typeof req.body.category === 'string'
+						? JSON.parse(req.body.category)
+						: req.body.category;
+			} catch {
+				return res.status(400).json({
+					error: 'Invalid category format. Must be JSON.',
+				});
 			}
 		}
 
-		// ✅ Update location if provided
+		// Update location if provided
 		if (
 			req.body.latitude ||
 			req.body.longitude ||
@@ -225,14 +265,14 @@ export const updateBusinessPage = async (req, res) => {
 		) {
 			page.location = {
 				latitude:
-					req.body.latitude || page.location.latitude,
+					req.body.latitude ?? page.location.latitude,
 				longitude:
-					req.body.longitude || page.location.longitude,
-				address: req.body.address || page.location.address,
+					req.body.longitude ?? page.location.longitude,
+				address: req.body.address ?? page.location.address,
 			};
 		}
 
-		// ✅ Update opening hours
+		// Update opening hours if provided
 		if (req.body.openingHours) {
 			let parsedHours;
 			try {
@@ -241,11 +281,9 @@ export const updateBusinessPage = async (req, res) => {
 						? JSON.parse(req.body.openingHours)
 						: req.body.openingHours;
 			} catch {
-				return res
-					.status(400)
-					.json({
-						error: 'Invalid JSON format for openingHours',
-					});
+				return res.status(400).json({
+					error: 'Invalid JSON format for openingHours',
+				});
 			}
 
 			if (!Array.isArray(parsedHours)) {
@@ -280,19 +318,18 @@ export const updateBusinessPage = async (req, res) => {
 			page.openingHours = parsedHours;
 		}
 
-		// ✅ Update images
+		// Update images if provided
 		if (req.files?.logo) page.logo = req.files.logo[0].path;
 		if (req.files?.banner)
 			page.banner = req.files.banner[0].path;
 
-		// ✅ Save vendor with updated page
-		await vendor.save();
+		// Save updated page
+		await page.save();
 
 		res.json({
 			success: true,
 			message: 'Business page updated successfully',
 			page,
-			vendor
 		});
 	} catch (error) {
 		console.error('Error updating business page:', error);
@@ -304,39 +341,18 @@ export const getSingleBusinessPage = async (req, res) => {
 	try {
 		const { pageId } = req.params;
 
-		// 🔍 Find vendor with the page
-		const vendor = await User.findOne({
-			'vendorProfile.pages._id': pageId,
-		})
-			.select('vendorProfile.pages')
+		// Find the page by ID and populate services and their categories
+		const page = await Page.findById(pageId)
+			.populate({
+				path: 'services',
+				populate: { path: 'category' }, // Populate category inside services
+			})
 			.lean();
 
-		if (!vendor) {
-			return res.status(404).json({ error: 'Page not found' });
-		}
-
-		// 🎯 Find the exact page
-		const page = vendor.vendorProfile.pages.find(
-			(p) => p._id.toString() === pageId,
-		);
-
 		if (!page) {
-			return res.status(404).json({ error: 'Page not found' });
-		}
-
-		// 🔗 Populate service categories
-		if (page.services?.length > 0) {
-			page.services = await Promise.all(
-				page.services.map(async (service) => {
-					if (service.category) {
-						const category = await Category.findById(service.category).lean();
-						if (category) {
-							service.category = category;
-						}
-					}
-					return service;
-				}),
-			);
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
 		}
 
 		res.status(200).json(page);
@@ -346,15 +362,27 @@ export const getSingleBusinessPage = async (req, res) => {
 	}
 };
 
-export const getVendorFromBusinessPage = async (req, res) => {
+export const getVendorFromBusinessPage = async (
+	req,
+	res,
+) => {
 	try {
 		const { pageId } = req.params;
 
-		// 🔍 Find vendor with the page
-		const vendor = await User.findOne({
-			'vendorProfile.pages._id': pageId,
-		})
-			.select('vendorProfile.pages')
+		// 1. Find the page and get vendor reference
+		const page = await Page.findById(pageId)
+			.select('vendor')
+			.lean();
+
+		if (!page) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// 2. Find the vendor by ID
+		const vendor = await User.findById(page.vendor)
+			.select('-password') // exclude sensitive data
 			.lean();
 
 		if (!vendor) {
@@ -365,7 +393,10 @@ export const getVendorFromBusinessPage = async (req, res) => {
 
 		res.status(200).json(vendor);
 	} catch (error) {
-		console.error('Error fetching vendor from business page:', error);
+		console.error(
+			'Error fetching vendor from business page:',
+			error,
+		);
 		res.status(500).json({ error: 'Server error' });
 	}
 };
@@ -374,28 +405,23 @@ export const getServicesForPage = async (req, res) => {
 	try {
 		const { pageId } = req.params;
 
-		// 🔍 Find the vendor that has the specific page
-		const vendor = await User.findOne({ 'vendorProfile.pages._id': pageId }).lean();
-
-		if (!vendor) {
-			return res.status(404).json({ error: 'Vendor not found' });
-		}
-
-		// 🎯 Find the specific page
-		const page = vendor.vendorProfile.pages.find(
-			(p) => p._id.toString() === pageId,
-		);
+		// Find the page by ID and populate vendor minimally if needed
+		const page = await Page.findById(pageId).lean();
 
 		if (!page) {
-			return res.status(404).json({ error: 'Page not found' });
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
 		}
 
-		// 🔗 Populate category details for each service
+		// Map over embedded services to populate category details
 		const services = await Promise.all(
 			page.services.map(async (service) => {
 				let categoryDetails = null;
 				if (service.category) {
-					const category = await Category.findById(service.category).lean();
+					const category = await Category.findById(
+						service.category,
+					).lean();
 					if (category) {
 						categoryDetails = {
 							id: category._id,
@@ -403,6 +429,7 @@ export const getServicesForPage = async (req, res) => {
 						};
 					}
 				}
+
 				return {
 					id: service._id,
 					name: service.name,
@@ -424,24 +451,33 @@ export const getServicesForPage = async (req, res) => {
 
 export const updateVendorProfile = async (req, res) => {
 	try {
-		const vendor = await User.findById(req.user.userId);
+		const vendor = await User.findById(
+			req.user.userId,
+		).select('-password');
 		if (!vendor) {
 			return res
 				.status(404)
 				.json({ error: 'Vendor not found' });
 		}
 
-		// ✅ Update vendor-level details
-		if (req.body.name)
-			vendor.name = req.body.name;
-		if (req.body.phone) vendor.phone = req.body.phone;
+		// Update fields only if provided and valid
+		if (req.body?.name && req.body.name.trim().length > 0) {
+			vendor.name = req.body.name.trim();
+		}
+
+		if (
+			req.body?.phone &&
+			/^[\d\+\-\s]{7,15}$/.test(req.body.phone)
+		) {
+			vendor.phone = req.body.phone.trim();
+		}
 
 		await vendor.save();
 
 		res.status(200).json({
 			success: true,
 			message: 'Vendor profile updated',
-			vendor,
+			vendor, // you might want to pick specific fields to return here
 		});
 	} catch (error) {
 		console.error('Error updating vendor:', error);
@@ -480,47 +516,36 @@ export const getVendorWithPagesAndServices = async (
 	res,
 ) => {
 	try {
-		const { id } = req.params;
+		const { id } = req.params; // Page ID
 
-		const vendor = await User.findById(id).select(
-			'-password',
+		// Find the page by its ID and populate vendor details if needed
+		const page = await Page.findById(id).populate(
+			'vendor',
+			'-password -email',
 		);
-		if (!vendor) {
+
+		if (!page) {
 			return res
 				.status(404)
-				.json({ message: 'Vendor not found' });
+				.json({ message: 'Page not found' });
 		}
 
-		const services = await Service.find({ vendor: id });
-
-		const pagesWithServices = (vendor.pages || []).map(
-			(page) => ({
-				...page.toObject(),
-				services: services.filter((service) =>
-					page.services?.includes(service._id),
-				),
-			}),
-		);
-
-		return res.status(200).json({
-			vendor,
-			pages: pagesWithServices,
-		});
+		// The services are embedded in the page document, so no extra query needed
+		return res.status(200).json({ page });
 	} catch (error) {
-		console.error('Error fetching vendor details:', error);
+		console.error('Error fetching page:', error);
 		return res
 			.status(500)
 			.json({ message: 'Server error' });
 	}
 };
 
-
 export const addServiceToPage = async (req, res) => {
 	try {
 		const vendorId = req.user.userId;
 		const { pageId } = req.params;
 
-		// Find vendor by ID
+		// Verify vendor exists
 		const vendor = await User.findById(vendorId);
 		if (!vendor) {
 			return res
@@ -528,20 +553,28 @@ export const addServiceToPage = async (req, res) => {
 				.json({ error: 'Vendor not found' });
 		}
 
-		// Locate specific page using the id() method on the subdocument array
-		const page = vendor.vendorProfile.pages.id(pageId);
+		// Find the page by ID
+		const page = await Page.findById(pageId);
 		if (!page) {
 			return res
 				.status(404)
 				.json({ error: 'Page not found' });
 		}
 
-		// Prepare uploaded images
-		const images = req.files.map((file) => ({
-			url: file.path,
-		}));
+		// Check if this page belongs to the vendor
+		if (page.vendor.toString() !== vendorId) {
+			return res.status(403).json({
+				error: 'Unauthorized: You do not own this page',
+			});
+		}
 
-		// Build new service
+		// Prepare uploaded images (assuming req.files is set up correctly)
+		const images =
+			req.files?.map((file) => ({
+				url: file.path,
+			})) || [];
+
+		// Build new service object
 		const newService = {
 			name: req.body.name,
 			category: req.body.category,
@@ -551,18 +584,17 @@ export const addServiceToPage = async (req, res) => {
 			images,
 		};
 
-		// Add to services array of the page
+		// Add new service to the page's services array
 		page.services.push(newService);
 
-		// Save changes
-		await vendor.save();
+		// Save the page document
+		await page.save();
 
 		res.status(201).json({
 			success: true,
 			message: 'Service added successfully',
 			service: newService,
 			page,
-			vendor,
 		});
 	} catch (error) {
 		console.error('Error adding service:', error);
@@ -574,8 +606,25 @@ export const createCategoryForPage = async (req, res) => {
 	const { pageId } = req.params;
 	const { name } = req.body;
 
+	// Validate pageId as ObjectId
+	if (!mongoose.Types.ObjectId.isValid(pageId)) {
+		return res
+			.status(400)
+			.json({ error: 'Invalid pageId' });
+	}
+
 	try {
+		// Optional: verify the page exists
+		const pageExists = await Page.exists({ _id: pageId });
+		if (!pageExists) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
+		}
+
+		// Create the category linked to this page
 		const category = new Category({ name, pageId });
+
 		await category.save();
 
 		res.status(201).json({
@@ -607,27 +656,36 @@ export const getCategoriesForPage = async (req, res) => {
 
 export const addReviewToPage = async (req, res) => {
 	const { pageId } = req.params;
-	const { customerId, rating, comment } = req.body;
+	const customerId = req.user.userId; // assuming auth middleware
+	const { rating, comment } = req.body;
+
+	if (!rating || rating < 1 || rating > 5) {
+		return res
+			.status(400)
+			.json({ error: 'Rating must be between 1 and 5' });
+	}
 
 	try {
-		const vendor = await User.findOne({ 'pages._id': pageId });
-		if (!vendor) {
-			return res.status(404).json({ error: 'Vendor not found' });
-		}
-
-		const page = vendor.pages.id(pageId);
+		// Find page by ID
+		const page = await Page.findById(pageId);
 		if (!page) {
-			return res.status(404).json({ error: 'Page not found' });
+			return res
+				.status(404)
+				.json({ error: 'Page not found' });
 		}
 
+		// Create new review object
 		const newReview = {
 			customer: customerId,
 			rating,
 			comment,
 		};
 
+		// Push review into the page's reviews array
 		page.reviews.push(newReview);
-		await vendor.save();
+
+		// Save updated page
+		await page.save();
 
 		res.status(201).json({
 			success: true,
@@ -644,18 +702,10 @@ export const getReviewsForPage = async (req, res) => {
 	const { pageId } = req.params;
 
 	try {
-		// Find the vendor that has the specified page
-		const vendor = await User.findOne({
-			'pages._id': pageId,
-		});
-		if (!vendor) {
-			return res
-				.status(404)
-				.json({ error: 'Vendor not found' });
-		}
-
-		// Find the specific page by ID
-		const page = vendor.pages.id(pageId);
+		// Find the page by ID
+		const page = await Page.findById(pageId).select(
+			'reviews',
+		);
 		if (!page) {
 			return res
 				.status(404)
@@ -673,24 +723,29 @@ export const getReviewsForPage = async (req, res) => {
 	}
 };
 
-export const getAllReviewsForVendor = async (req, res) => {
+export const getAllReviewsForVendorPages = async (
+	req,
+	res,
+) => {
 	const { vendorId } = req.params;
 
 	try {
-		// Find the vendor by ID
-		const vendor = await User.findById(vendorId);
-		if (!vendor) {
+		// Find all pages belonging to the vendor
+		const pages = await Page.find({
+			vendor: vendorId,
+		}).select('reviews');
+
+		if (!pages || pages.length === 0) {
 			return res
 				.status(404)
-				.json({ error: 'Vendor not found' });
+				.json({ error: 'No pages found for this vendor' });
 		}
 
-		// Extract all reviews from all pages
-		const allReviews = vendor.pages.flatMap(
+		// Flatten all reviews from all pages
+		const allReviews = pages.flatMap(
 			(page) => page.reviews,
 		);
 
-		// Return the reviews
 		res.status(200).json({
 			success: true,
 			reviews: allReviews,

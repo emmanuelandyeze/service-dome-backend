@@ -8,7 +8,7 @@ import {
 	addServiceToPage,
 	createBusinessPage,
 	createCategoryForPage,
-	getAllReviewsForVendor,
+	getAllReviewsForVendorPages,
 	getAllVendors,
 	getAllVendorsPages,
 	getCategoriesForPage,
@@ -158,6 +158,9 @@ router.get('/pages/:pageId/reviews', getReviewsForPage);
  * @desc    Fetch all reviews for all pages of a vendor
  * @access  Public
  */
-router.get('/:vendorId/reviews', getAllReviewsForVendor);
+router.get(
+	'/:vendorId/reviews',
+	getAllReviewsForVendorPages,
+);
 
 export default router;

@@ -145,31 +145,16 @@ const UserSchema = new mongoose.Schema({
 			enum: ['Active', 'Expired'],
 			default: 'Expired',
 		},
-		pages: [PageSchema],
+		pages: {
+			type: [PageSchema],
+			default: [],
+		},
 	},
 	expoPushToken: { type: String },
 
 	createdAt: { type: Date, default: Date.now },
 });
 
-// Restrict free-tier vendors to one business page
-UserSchema.pre('save', function (next) {
-	this.isVendor = this.roles.includes('Vendor');
-
-	// Keep your existing logic for free-tier restriction
-	if (
-		this.isVendor &&
-		this.vendorProfile.membershipTier === 'Free' &&
-		this.vendorProfile.pages.length > 1
-	) {
-		const err = new Error(
-			'Free-tier vendors can only have one business page.',
-		);
-		return next(err);
-	}
-
-	next();
-});
 
 UserSchema.methods.toJSON = function () {
 	const userObject = this.toObject();
