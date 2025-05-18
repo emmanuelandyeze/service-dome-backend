@@ -755,3 +755,109 @@ export const getAllReviewsForVendorPages = async (
 		res.status(500).json({ error: 'Server error' });
 	}
 };
+
+// Create a new time slot
+export const createTimeSlot = async (req, res) => {
+	try {
+		const {pageId} = req.params
+		const { day, time, status = 'Available', blockReason } = req.body;
+
+		const page = await Page.findById(pageId);
+		if (!page) {
+			return res.status(404).json({ error: 'Page not found' });
+		}
+
+		// Find the day object within timeSlots or create one
+		let daySlot = page.timeSlots.find((slot) => slot.day === day);
+		if (!daySlot) {
+			daySlot = { day, slots: [] };
+			page.timeSlots.push(daySlot);
+		}
+
+		// Add the new time slot
+		daySlot.slots.push({ time, status, blockReason });
+		await page.save();
+
+		return res.status(201).json({ message: 'Time slot created', page });
+	} catch (error) {
+		console.error('Error creating time slot:', error);
+		return res.status(500).json({ error: 'Server error' });
+	}
+};
+
+// Update an existing time slot
+export const updateTimeSlot = async (req, res) => {
+	try {
+		const { pageId } = req.params;
+		const { day, time, status, blockReason } = req.body;
+
+		const page = await Page.findById(pageId);
+		if (!page) {
+			return res.status(404).json({ error: 'Page not found' });
+		}
+
+		const daySlot = page.timeSlots.find((slot) => slot.day === day);
+		if (!daySlot) {
+			return res.status(404).json({ error: 'Time slot not found for the given day' });
+		}
+
+		const slot = daySlot.slots.find((s) => s.time === time);
+		if (!slot) {
+			return res.status(404).json({ error: 'Time slot not found' });
+		}
+
+		// Update slot details
+		slot.status = status || slot.status;
+		slot.blockReason = blockReason || slot.blockReason;
+		await page.save();
+
+		return res.status(200).json({ message: 'Time slot updated', page });
+	} catch (error) {
+		console.error('Error updating time slot:', error);
+		return res.status(500).json({ error: 'Server error' });
+	}
+};
+
+// Delete a time slot
+export const deleteTimeSlot = async (req, res) => {
+	try {
+		const { pageId } = req.params;
+		const { day, time } = req.body;
+
+		const page = await Page.findById(pageId);
+		if (!page) {
+			return res.status(404).json({ error: 'Page not found' });
+		}
+
+		const daySlot = page.timeSlots.find((slot) => slot.day === day);
+		if (!daySlot) {
+			return res.status(404).json({ error: 'Time slot not found for the given day' });
+		}
+
+		// Remove the time slot
+		daySlot.slots = daySlot.slots.filter((s) => s.time !== time);
+		await page.save();
+
+		return res.status(200).json({ message: 'Time slot deleted', page });
+	} catch (error) {
+		console.error('Error deleting time slot:', error);
+		return res.status(500).json({ error: 'Server error' });
+	}
+};
+
+// Get all time slots for a specific page
+export const getTimeSlots = async (req, res) => {
+	try {
+		const { pageId } = req.params;
+
+		const page = await Page.findById(pageId);
+		if (!page) {
+			return res.status(404).json({ error: 'Page not found' });
+		}
+
+		return res.status(200).json({ timeSlots: page.timeSlots });
+	} catch (error) {
+		console.error('Error fetching time slots:', error);
+		return res.status(500).json({ error: 'Server error' });
+	}
+};

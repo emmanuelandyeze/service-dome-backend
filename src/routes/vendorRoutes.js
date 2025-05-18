@@ -8,6 +8,8 @@ import {
 	addServiceToPage,
 	createBusinessPage,
 	createCategoryForPage,
+	createTimeSlot,
+	deleteTimeSlot,
 	getAllReviewsForVendorPages,
 	getAllVendors,
 	getAllVendorsPages,
@@ -15,10 +17,12 @@ import {
 	getReviewsForPage,
 	getServicesForPage,
 	getSingleBusinessPage,
+	getTimeSlots,
 	getVendorFromBusinessPage,
 	getVendorsByCategory,
 	getVendorWithPagesAndServices,
 	updateBusinessPage,
+	updateTimeSlot,
 	updateVendorProfile,
 } from '../controllers/vendorController.js';
 import { verifyToken } from '../middlewares/authMiddleware.js';
@@ -162,5 +166,17 @@ router.get(
 	'/:vendorId/reviews',
 	getAllReviewsForVendorPages,
 );
+
+// Create a new time slot
+router.post('/:pageId/timeslots', createTimeSlot);
+
+// Update an existing time slot
+router.put('/:pageId/timeslots/update', updateTimeSlot);
+
+// Delete a time slot
+router.delete('/:pageId/timeslots', deleteTimeSlot);
+
+// Get all time slots for a page
+router.get('/:pageId/timeslots', getTimeSlots);
 
 export default router;

@@ -32,15 +32,31 @@ const DeliverySettingsSchema = new mongoose.Schema({
 });
 
 const TimeSlotSchema = new mongoose.Schema({
-    date: { type: Date, required: true }, // Specific day
-    startTime: { type: String, required: true }, // e.g., "09:00"
-    endTime: { type: String, required: true }, // e.g., "09:30"
-    status: {
-        type: String,
-        enum: ['Available', 'Blocked', 'Booked'],
-        default: 'Available',
-    },
-    blockReason: { type: String }, // Reason for blocking (if any)
+	day: {
+		type: String,
+		enum: [
+			'Monday',
+			'Tuesday',
+			'Wednesday',
+			'Thursday',
+			'Friday',
+			'Saturday',
+			'Sunday',
+		],
+		required: true,
+	},
+	slots: [
+		{
+			time: { type: String, required: true }, // Flexible time format (e.g., "07:30", "10:30")
+			status: {
+				type: String,
+				enum: ['Available', 'Blocked', 'Booked'],
+				default: 'Available',
+			},
+			blockReason: { type: String }, // Optional reason for blocking
+		},
+	],
+	createdAt: { type: Date, default: Date.now },
 });
 
 const PageSchema = new mongoose.Schema({

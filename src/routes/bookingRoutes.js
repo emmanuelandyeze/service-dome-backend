@@ -4,8 +4,13 @@ import Vendor from '../models/Vendor.js';
 import { verifyToken } from '../middlewares/authMiddleware.js';
 import User from '../models/User.js';
 import { addNotification } from '../utils/addNotification.js';
+import Page from '../models/Page.js';
+import { Expo } from 'expo-server-sdk';
 
 const router = express.Router();
+
+// Initialize Expo SDK
+const expo = new Expo();
 
 // Create a booking
 router.post('/', verifyToken, async (req, res) => {
@@ -57,18 +62,15 @@ router.post('/', verifyToken, async (req, res) => {
 		// Save the booking to the database
 		await booking.save();
 
-		// Fetch vendor details based on pageId
-		const vendor = await User.findOne({
-			'vendorProfile.pages._id': pageId,
-		});
+		const page = await Page.findById(pageId);
 
-		if (!vendor) {
+		if (!page) {
 			return res.status(404).json({
-				error: 'Vendor not found for this pageId',
+				error: 'Page not found for this pageId',
 			});
 		}
 
-		const vendorId = vendor._id;
+		const vendorId = page.vendor;
 
 		// Extract the names of the items in the booking
 		const itemNames = items.map((item) => item.name); // Assuming the item has a 'name' field
@@ -90,6 +92,30 @@ router.post('/', verifyToken, async (req, res) => {
 				message,
 			},
 		});
+
+		const vendor = await User.findById(vendorId);
+
+		// Send the Expo push notification
+		if (
+			vendor.expoPushToken &&
+			Expo.isExpoPushToken(vendor.expoPushToken)
+		) {
+			const pushMessage = {
+				to: vendor.expoPushToken,
+				sound: 'default',
+				title: 'New Service Request',
+				body: message,
+				data: { bookingId: booking._id },
+			};
+
+			// Send push notification asynchronously
+			await expo.sendPushNotificationsAsync([pushMessage]);
+			console.log(pushMessage);
+		} else {
+			console.warn(
+				'Invalid or missing Expo push token for vendor.',
+			);
+		}
 
 		// Return the created booking
 		res.status(201).json({
@@ -134,6 +160,30 @@ router.put('/:id/status', verifyToken, async (req, res) => {
 		booking.status = status;
 		await booking.save();
 
+		const customer = await User.findById(booking.customer);
+
+		// Send the Expo push notification
+		if (
+			customer.expoPushToken &&
+			Expo.isExpoPushToken(customer.expoPushToken)
+		) {
+			const pushMessage = {
+				to: customer.expoPushToken,
+				sound: 'default',
+				title: 'Update on service request',
+				body: `Your service request has been ${status}.`,
+				data: { bookingId: booking._id },
+			};
+
+			// Send push notification asynchronously
+			await expo.sendPushNotificationsAsync([pushMessage]);
+			console.log(pushMessage);
+		} else {
+			console.warn(
+				'Invalid or missing Expo push token for vendor.',
+			);
+		}
+
 		// Return the updated booking
 		res.json(booking);
 	} catch (error) {
@@ -165,15 +215,15 @@ router.get('/', verifyToken, async (req, res) => {
 					.json({ error: 'Vendor not found.' });
 			}
 
-			const isPageOwner = vendor.vendorProfile.pages.some(
-				(page) => page._id.toString() === req.query.pageId,
-			);
+			// const isPageOwner = vendor.vendorProfile.pages.some(
+			// 	(page) => page._id.toString() === req.query.pageId,
+			// );
 
-			if (!isPageOwner) {
-				return res
-					.status(403)
-					.json({ error: 'Unauthorized page access.' });
-			}
+			// if (!isPageOwner) {
+			// 	return res
+			// 		.status(403)
+			// 		.json({ error: 'Unauthorized page access.' });
+			// }
 
 			query.pageId = req.query.pageId;
 		} else {
@@ -183,24 +233,16 @@ router.get('/', verifyToken, async (req, res) => {
 		}
 
 		// Fetch bookings
-		const bookings = await Booking.find(query).populate(
-			'customer',
-			'name email',
-		);
+		const bookings = await Booking.find(query)
+			.populate('customer', 'name email')
+			.populate('pageId', 'businessName');
 
 		// Now find the vendor and page for each booking
 		const bookingsWithPageDetails = await Promise.all(
 			bookings.map(async (booking) => {
-				const pageOwner = await User.findOne({
-					'vendorProfile.pages._id': booking.pageId,
-				});
-
-				const pageDetails =
-					pageOwner?.vendorProfile?.pages.find(
-						(p) =>
-							p._id.toString() ===
-							booking.pageId.toString(),
-					);
+				const pageDetails = await Page.findById(
+					booking.pageId,
+				);
 
 				return {
 					...booking.toObject(),
