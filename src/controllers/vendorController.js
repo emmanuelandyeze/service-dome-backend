@@ -159,23 +159,21 @@ export const createBusinessPage = async (req, res) => {
 			openingHours = parsedHours;
 		}
 
-		// Handle category - check if it's already an object or needs parsing
-		let category;
-		try {
-			category =
-				typeof req.body.category === 'string'
-					? JSON.parse(req.body.category)
-					: req.body.category;
-		} catch (e) {
+		let category = req.body.category;
+
+		if (!category || !category.name || !category.slug) {
 			return res.status(400).json({
-				error: 'Invalid category format',
+				error: 'Category must include both name and slug',
 			});
 		}
 
 		// Create new page object
 		const newPage = new Page({
 			vendor: vendor._id,
-			category: category,
+			category: {
+				name: category.name,
+				slug: category.slug,
+			},
 			businessName: req.body.businessName,
 			storePolicies: req.body.storePolicies,
 			location: {
