@@ -194,7 +194,7 @@ export const createBusinessPage = async (req, res) => {
 		await newPage.save();
 
 		// Push the new page ID into the vendor's vendorProfile.pages array
-		vendor.vendorProfile.pages.push(newPage._id);
+		// vendor.vendorProfile.pages.push(newPage._id);
 		await vendor.save();
 
 		res.status(201).json({

@@ -145,10 +145,6 @@ const UserSchema = new mongoose.Schema({
 			enum: ['Active', 'Expired'],
 			default: 'Expired',
 		},
-		pages: {
-			type: [PageSchema],
-			default: [],
-		},
 	},
 	expoPushToken: { type: String },
 
