@@ -67,7 +67,7 @@ const PageSchema = new mongoose.Schema({
 	},
 	category: {
 		name: { type: String, required: true },
-		slug: { type: String, required: true, unique: true },
+		slug: { type: String, required: true },
 		image: { type: String },
 	},
 	businessName: { type: String, required: true },
