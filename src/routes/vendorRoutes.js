@@ -148,7 +148,11 @@ router.get(
  * @desc    Add a review to a specific page
  * @access  Public
  */
-router.post('/pages/:pageId/reviews', addReviewToPage);
+router.post(
+	'/pages/:pageId/reviews',
+	verifyToken,
+	addReviewToPage,
+);
 
 /**
  * @route   GET /api/vendors/pages/:pageId/reviews

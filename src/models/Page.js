@@ -1,34 +1,34 @@
 import mongoose from 'mongoose';
 
 const ServiceSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    category: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Category',
-        required: true,
-    },
-    description: { type: String, trim: true },
-    price: { type: Number, min: 0 },
-    duration: { type: Number, min: 0 }, // Duration in minutes
-    images: [{ url: { type: String } }],
-    createdAt: { type: Date, default: Date.now },
+	name: { type: String, required: true },
+	category: {
+		type: mongoose.Schema.Types.ObjectId,
+		ref: 'Category',
+		required: true,
+	},
+	description: { type: String, trim: true },
+	price: { type: Number, min: 0 },
+	duration: { type: Number, min: 0 }, // Duration in minutes
+	images: [{ url: { type: String } }],
+	createdAt: { type: Date, default: Date.now },
 });
 
 const DeliverySettingsSchema = new mongoose.Schema({
-    enabled: { type: Boolean, default: false }, // Delivery enabled or not
-    fixedFee: { type: Number, min: 0, default: 0 }, // Fixed delivery fee
-    distanceBased: { type: Boolean, default: false }, // Charge based on distance
-    rates: [
-        { distance: { type: Number }, fee: { type: Number } },
-    ], // Rate per km
-    availableZones: [{ type: String }], // Delivery areas
-    estimatedTime: { type: String }, // Estimated delivery time
-    selfPickup: {
-        // Self-pickup settings
-        enabled: { type: Boolean, default: false }, // Self-pickup available or not
-        location: { type: String }, // Pickup address
-        instructions: { type: String }, // Instructions for pickup
-    },
+	enabled: { type: Boolean, default: false }, // Delivery enabled or not
+	fixedFee: { type: Number, min: 0, default: 0 }, // Fixed delivery fee
+	distanceBased: { type: Boolean, default: false }, // Charge based on distance
+	rates: [
+		{ distance: { type: Number }, fee: { type: Number } },
+	], // Rate per km
+	availableZones: [{ type: String }], // Delivery areas
+	estimatedTime: { type: String }, // Estimated delivery time
+	selfPickup: {
+		// Self-pickup settings
+		enabled: { type: Boolean, default: false }, // Self-pickup available or not
+		location: { type: String }, // Pickup address
+		instructions: { type: String }, // Instructions for pickup
+	},
 });
 
 const TimeSlotSchema = new mongoose.Schema({
@@ -76,6 +76,20 @@ const PageSchema = new mongoose.Schema({
 	banner: { type: String },
 	services: [ServiceSchema],
 	storePolicies: { type: String },
+	availability: [
+		{
+			day: {
+				type: String, // 'Monday', 'Tuesday', etc.
+				required: true,
+			},
+			timeSlots: [
+				{
+					from: { type: String }, // e.g., "09:00"
+					to: { type: String }, // e.g., "12:00"
+				},
+			],
+		},
+	],
 	reviews: [
 		{
 			customer: {
@@ -121,8 +135,8 @@ PageSchema.pre('save', async function (next) {
 		if (!this.vendor) return next();
 
 		// Find vendor's membership tier by querying User model
-        const User = this.model('User');
-        const Page = this.model('Page')
+		const User = this.model('User');
+		const Page = this.model('Page');
 		const vendor = await User.findById(this.vendor).select(
 			'vendorProfile',
 		);

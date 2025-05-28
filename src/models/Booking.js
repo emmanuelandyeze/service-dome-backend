@@ -13,8 +13,9 @@ const BookingSchema = new mongoose.Schema({
 	items: {},
 	totalPrice: { type: Number, required: true },
 	deliveryAddress: { type: String, required: true },
-	scheduledDate: { type: Date },
-	scheduledTime: { type: Date },
+	scheduledDate: { type: Date, required: true },
+	scheduledTimeStart: { type: String, required: true },
+	scheduledTimeEnd: { type: String, required: true },
 	status: {
 		type: String,
 		enum: [

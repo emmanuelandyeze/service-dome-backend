@@ -270,24 +270,24 @@ export const updateBusinessPage = async (req, res) => {
 			};
 		}
 
-		// Update opening hours if provided
-		if (req.body.openingHours) {
-			let parsedHours;
+		// ✅ Update availability if provided
+		if (req.body.availability) {
+			let parsedAvailability;
 			try {
-				parsedHours =
-					typeof req.body.openingHours === 'string'
-						? JSON.parse(req.body.openingHours)
-						: req.body.openingHours;
+				parsedAvailability =
+					typeof req.body.availability === 'string'
+						? JSON.parse(req.body.availability)
+						: req.body.availability;
 			} catch {
 				return res.status(400).json({
-					error: 'Invalid JSON format for openingHours',
+					error: 'Invalid JSON format for availability',
 				});
 			}
 
-			if (!Array.isArray(parsedHours)) {
+			if (!Array.isArray(parsedAvailability)) {
 				return res
 					.status(400)
-					.json({ error: 'openingHours must be an array' });
+					.json({ error: 'availability must be an array' });
 			}
 
 			const validDays = [
@@ -300,20 +300,29 @@ export const updateBusinessPage = async (req, res) => {
 				'Sunday',
 			];
 
-			for (const entry of parsedHours) {
-				if (!validDays.includes(entry.day)) {
-					return res
-						.status(400)
-						.json({ error: `Invalid day: ${entry.day}` });
-				}
-				if (!entry.openingTime || !entry.closingTime) {
+			for (const entry of parsedAvailability) {
+				if (!entry.day || !validDays.includes(entry.day)) {
 					return res.status(400).json({
-						error: `Missing openingTime or closingTime for ${entry.day}`,
+						error: `Invalid or missing day in availability entry: ${entry.day}`,
 					});
+				}
+
+				if (!Array.isArray(entry.timeSlots)) {
+					return res.status(400).json({
+						error: `Invalid or missing timeSlots for ${entry.day}`,
+					});
+				}
+
+				for (const slot of entry.timeSlots) {
+					if (!slot.from || !slot.to) {
+						return res.status(400).json({
+							error: `Missing 'from' or 'to' time in timeSlots for ${entry.day}`,
+						});
+					}
 				}
 			}
 
-			page.openingHours = parsedHours;
+			page.availability = parsedAvailability;
 		}
 
 		// Update images if provided
@@ -334,6 +343,7 @@ export const updateBusinessPage = async (req, res) => {
 		res.status(500).json({ error: 'Server error' });
 	}
 };
+
 
 export const getSingleBusinessPage = async (req, res) => {
 	try {

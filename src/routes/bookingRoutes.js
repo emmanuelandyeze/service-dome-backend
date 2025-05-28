@@ -12,6 +12,39 @@ const router = express.Router();
 // Initialize Expo SDK
 const expo = new Expo();
 
+function getNextDateOfDay(dayName) {
+	const daysOfWeek = [
+		'Sunday',
+		'Monday',
+		'Tuesday',
+		'Wednesday',
+		'Thursday',
+		'Friday',
+		'Saturday',
+	];
+	const dayIndex = daysOfWeek.indexOf(dayName);
+	if (dayIndex === -1) throw new Error('Invalid day name');
+
+	const today = new Date();
+	const todayIndex = today.getDay();
+
+	let diff = dayIndex - todayIndex;
+	if (diff < 0) diff += 7;
+
+	const targetDate = new Date(today);
+	targetDate.setDate(today.getDate() + diff);
+	targetDate.setHours(0, 0, 0, 0);
+	return targetDate;
+}
+
+function combineDateAndTime(date, timeStr) {
+	// timeStr example: "08:00"
+	const [hours, minutes] = timeStr.split(':').map(Number);
+	const combined = new Date(date);
+	combined.setHours(hours, minutes, 0, 0);
+	return combined;
+}
+
 // Create a booking
 router.post('/', verifyToken, async (req, res) => {
 	try {
@@ -20,70 +53,82 @@ router.post('/', verifyToken, async (req, res) => {
 			items,
 			totalPrice,
 			deliveryAddress,
-			scheduledDate,
-			scheduledTime,
+			timeSlot,
 		} = req.body;
 
-		console.log(
-			pageId,
-			items,
-			totalPrice,
-			deliveryAddress,
-			scheduledDate,
-			scheduledTime,
-		);
-		// Validate required fields
 		if (
 			!pageId ||
 			!items ||
 			!totalPrice ||
 			!deliveryAddress ||
-			!scheduledDate ||
-			!scheduledTime
+			!timeSlot
 		) {
 			return res
 				.status(400)
 				.json({ error: 'Missing required fields.' });
 		}
 
+		console.log(
+			pageId,
+			items,
+			totalPrice,
+			deliveryAddress,
+			timeSlot,
+		);
+
+		const { day, from, to } = timeSlot;
+
+		if (!day || !from || !to) {
+			return res
+				.status(400)
+				.json({ error: 'Invalid timeSlot format.' });
+		}
+
+		// Convert day to actual Date
+		const scheduledDate = getNextDateOfDay(day);
+
+		// Combine date + time for start and end times
+		const scheduledTimeStart = combineDateAndTime(
+			scheduledDate,
+			from,
+		);
+		const scheduledTimeEnd = combineDateAndTime(
+			scheduledDate,
+			to,
+		);
+
 		// Create the booking
 		const booking = new Booking({
-			customer: req.user.userId, // Customer ID from authenticated user
-			pageId, // Vendor ID
-			items, // Array of items (services) with quantities and prices
-			totalPrice, // Total price of the booking
-			deliveryAddress, // Delivery address
-			scheduledDate: new Date(scheduledDate), // Scheduled date
-			scheduledTime: new Date(scheduledTime), // Scheduled time
-			status: 'Pending', // Default status
-			paymentStatus: 'Paid', // Default payment status
+			customer: req.user.userId,
+			pageId,
+			items,
+			totalPrice,
+			deliveryAddress,
+			scheduledDate, // Date only (day)
+			scheduledTimeStart, // Date with start time
+			scheduledTimeEnd, // Date with end time
+			status: 'Pending',
+			paymentStatus: 'Paid',
 		});
 
-		// Save the booking to the database
 		await booking.save();
 
-		const page = await Page.findById(pageId);
+		// Continue with notification and response as before...
 
+		const page = await Page.findById(pageId);
 		if (!page) {
-			return res.status(404).json({
-				error: 'Page not found for this pageId',
-			});
+			return res
+				.status(404)
+				.json({ error: 'Page not found for this pageId' });
 		}
 
 		const vendorId = page.vendor;
+		const itemNames = items.map((item) => item.name);
+		const message =
+			itemNames.length === 1
+				? `You’ve been requested for a ${itemNames[0]} service.`
+				: `You’ve been requested for a ${itemNames[0]} and other services.`;
 
-		// Extract the names of the items in the booking
-		const itemNames = items.map((item) => item.name); // Assuming the item has a 'name' field
-
-		// Construct the notification message
-		let message = '';
-		if (itemNames.length === 1) {
-			message = `You’ve been requested for a ${itemNames[0]} service.`;
-		} else {
-			message = `You’ve been requested for a ${itemNames[0]} and other services.`;
-		}
-
-		// Add the notification
 		await addNotification({
 			userId: vendorId,
 			notification: {
@@ -94,8 +139,6 @@ router.post('/', verifyToken, async (req, res) => {
 		});
 
 		const vendor = await User.findById(vendorId);
-
-		// Send the Expo push notification
 		if (
 			vendor.expoPushToken &&
 			Expo.isExpoPushToken(vendor.expoPushToken)
@@ -108,7 +151,6 @@ router.post('/', verifyToken, async (req, res) => {
 				data: { bookingId: booking._id },
 			};
 
-			// Send push notification asynchronously
 			await expo.sendPushNotificationsAsync([pushMessage]);
 			console.log(pushMessage);
 		} else {
@@ -117,7 +159,6 @@ router.post('/', verifyToken, async (req, res) => {
 			);
 		}
 
-		// Return the created booking
 		res.status(201).json({
 			success: true,
 			message: 'Booking created successfully',
@@ -276,21 +317,18 @@ router.get('/:id', verifyToken, async (req, res) => {
 				.json({ error: 'Booking not found.' });
 		}
 
-		// Fetch the vendor to get full page details
-		const vendor = await User.findOne({
-			'vendorProfile.pages._id': booking.pageId,
+		const pageDetails = await Page.findOne({
+			_id: booking.pageId,
 		});
 
-		const pageDetails = vendor?.vendorProfile?.pages?.find(
-			(page) =>
-				page._id.toString() === booking.pageId.toString(),
-		);
 
 		// Include full page details in the response
 		const bookingWithPageDetails = {
 			...booking.toObject(),
 			page: pageDetails || null,
 		};
+
+		console.log(bookingWithPageDetails);
 
 		// Return the booking with page details
 		res.json(bookingWithPageDetails);
