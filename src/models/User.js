@@ -145,6 +145,7 @@ const UserSchema = new mongoose.Schema({
 			enum: ['Active', 'Expired'],
 			default: 'Expired',
 		},
+		stripeAccountId: { type: String },
 	},
 	expoPushToken: { type: String },
 

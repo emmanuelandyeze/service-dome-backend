@@ -12,6 +12,8 @@ import customerRoutes from './routes/customerRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import notificationsRoutes from './routes/notificationsRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
+import webhookRoutes from './routes/webhookRoutes.js';
+import subscriptionRoutes from './routes/subscribeRoutes.js';
 import Stripe from 'stripe';
 
 dotenv.config();
@@ -24,7 +26,10 @@ app.use(express.json());
 app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
+// For webhook, Stripe requires raw body
+app.use('/webhook', webhookRoutes);
 
+// Other routes
 app.use('/api/auth', authRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -33,6 +38,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/delivery', deliveryRoutes);
+app.use('/api/subscription', subscriptionRoutes);
 
 app.get('/', (req, res) => {
 	res.send('Service Dome API is running....');
