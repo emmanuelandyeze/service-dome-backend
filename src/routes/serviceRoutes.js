@@ -1,216 +1,256 @@
 import express from 'express';
-import Service from '../models/Service.js';
-import Vendor from '../models/Vendor.js';
+// Assuming your Page model is exported from '../models/Page.js'
+import Page from '../models/Page.js';
 import { uploadService } from '../middlewares/uploadMiddleware.js';
+// Assuming these are your authentication middleware
+import { verifyToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// Create a new service (Vendor only)
-// router.post(
-// 	'/services',
-// 	protectVendor,
-// 	uploadService.array('images', 5), // Adjust the limit as needed
-// 	async (req, res) => {
-// 		try {
-// 			// Retrieve the authenticated vendor's ID
-// 			const vendorId = req.vendor.id;
+// Create a new service for a vendor's page
+// The request body should now include the pageId
+router.post(
+	'/:pageId/services',
+	verifyToken,
+	uploadService.array('images', 5),
+	async (req, res) => {
+		try {
+			const { pageId } = req.params;
+			const vendorId = req.user.id; // Assuming auth middleware provides req.user.id
 
-// 			// Validate vendor existence
-// 			const vendor = await Vendor.findById(vendorId);
-// 			if (!vendor) {
-// 				return res
-// 					.status(404)
-// 					.json({ error: 'Vendor not found' });
-// 			}
+			const page = await Page.findById(pageId);
+			if (!page) {
+				return res
+					.status(404)
+					.json({ error: 'Page not found.' });
+			}
 
-// 			// Extract service details from the request body
-// 			const {
-// 				category,
-// 				name,
-// 				shortDescription,
-// 				price,
-// 				duration,
-// 			} = req.body;
+			// Authorization check: Ensure the vendor owns the page
+			if (page.vendor.toString() !== vendorId) {
+				return res.status(403).json({
+					error: 'Unauthorized: You do not own this page.',
+				});
+			}
 
-// 			// Validate required fields
-// 			if (!category || !name) {
-// 				return res.status(400).json({
-// 					error: 'Category and name are required.',
-// 				});
-// 			}
+			const {
+				category,
+				name,
+				description,
+				price,
+				duration,
+			} = req.body;
 
-// 			// Process uploaded images
-// 			const images = req.files.map((file) => ({
-// 				url: file.path,
-// 				description: file.originalname, // Or any other description logic
-// 			}));
+			if (!category || !name) {
+				return res.status(400).json({
+					error: 'Category and name are required.',
+				});
+			}
 
-// 			// Create a new service instance
-// 			const newService = new Service({
-// 				vendor: vendorId,
-// 				category,
-// 				name,
-// 				shortDescription,
-// 				price: price || undefined,
-// 				duration: duration || undefined,
-// 				images,
-// 			});
+			const images = req.files.map((file) => ({
+				url: file.path,
+			}));
 
-// 			// Save the service to the database
-// 			await newService.save();
+			// Create a new service sub-document
+			const newService = {
+				category,
+				name,
+				description,
+				price: price || 0,
+				duration: duration || 0,
+				images,
+			};
 
-// 			// Respond with the created service
-// 			res.status(201).json({
-// 				success: true,
-// 				message: 'Service added successfully',
-// 				service: newService,
-// 			});
-// 		} catch (error) {
-// 			console.error('Error adding service:', error);
-// 			res.status(500).json({ error: 'Server error' });
-// 		}
-// 	},
-// );
+			page.services.push(newService);
+			await page.save();
 
+			// Respond with the newly created service
+			const createdService =
+				page.services[page.services.length - 1];
 
+			res.status(201).json({
+				success: true,
+				message: 'Service added successfully',
+				service: createdService,
+			});
+		} catch (error) {
+			console.error('Error adding service:', error);
+			res.status(500).json({
+				error: 'Server error: Failed to add service.',
+			});
+		}
+	},
+);
 
+// Fetch all services for a specific vendor's page
+// This replaces your original /vendor/:vendorId route with a cleaner design
+router.get('/:pageId/services', async (req, res) => {
+	try {
+		const { pageId } = req.params;
+		const page = await Page.findById(pageId).populate({
+			path: 'services.category',
+			select: 'name', // Populate category name
+		});
 
-// Fetch all services (optional category filter)
-// router.get('/', async (req, res) => {
-// 	try {
-// 		const query = req.query.category
-// 			? { category: req.query.category }
-// 			: {};
-// 		const services = await Service.find(query).populate(
-// 			'vendor',
-// 			'businessName',
-// 		);
-// 		res.json(services);
-// 	} catch (error) {
-// 		res
-// 			.status(500)
-// 			.json({ error: 'Failed to fetch services' });
-// 	}
-// });
+		if (!page) {
+			return res
+				.status(404)
+				.json({ error: 'Page not found.' });
+		}
 
-// // Fetch services by vendor
-// router.get('/vendor/:vendorId', async (req, res) => {
-// 	try {
-// 		const services = await Service.find({
-// 			vendor: req.params.vendorId,
-// 		});
-// 		res.json(services);
-// 	} catch (error) {
-// 		res
-// 			.status(500)
-// 			.json({ error: 'Failed to fetch vendor services' });
-// 	}
-// });
+		// This endpoint will also handle the category filter
+		const categoryFilter = req.query.category;
+		let services = page.services;
 
-// // Fetch a single service by ID
-// router.get('/:id', async (req, res) => {
-// 	try {
-// 		const service = await Service.findById(req.params.id).populate(
-// 			'vendor',
-// 			'businessName email phone',
-// 		);
+		if (categoryFilter) {
+			services = page.services.filter(
+				(service) =>
+					service.category.toString() === categoryFilter,
+			);
+		}
 
-// 		if (!service) {
-// 			return res.status(404).json({ error: 'Service not found' });
-// 		}
+		res.json({ services });
+	} catch (error) {
+		console.error('Error fetching services:', error);
+		res
+			.status(500)
+			.json({ error: 'Failed to fetch services.' });
+	}
+});
 
-// 		res.json(service);
-// 	} catch (error) {
-// 		console.error('Error fetching service:', error);
-// 		res.status(500).json({ error: 'Failed to fetch service' });
-// 	}
-// });
+// Fetch a single service by its ID within a page
+router.get(
+	'/:pageId/services/:serviceId',
+	async (req, res) => {
+		try {
+			const { pageId, serviceId } = req.params;
 
+			const page = await Page.findById(pageId);
+			if (!page) {
+				return res
+					.status(404)
+					.json({ error: 'Page not found.' });
+			}
 
-// // Update a service (Vendor only)
-// router.put(
-// 	'/:id',
-// 	authMiddleware,
-// 	uploadService.array('itemImages', 10),
-// 	async (req, res) => {
-// 		try {
-// 			const service = await Service.findById(req.params.id);
-// 			if (
-// 				!service ||
-// 				service.vendor.toString() !== req.user.id
-// 			) {
-// 				return res
-// 					.status(403)
-// 					.json({ error: 'Unauthorized' });
-// 			}
+			const service = page.services.id(serviceId);
+			if (!service) {
+				return res.status(404).json({
+					error: 'Service not found on this page.',
+				});
+			}
 
-// 			// Parse JSON fields if needed
-// 			let items = req.body.items
-// 				? JSON.parse(req.body.items)
-// 				: service.items;
-// 			let schedule = req.body.schedule
-// 				? JSON.parse(req.body.schedule)
-// 				: service.schedule;
+			// To populate the category, we'd have to do it manually since it's a subdocument.
+			// A simpler approach is to return the service as is.
+			res.json({ service });
+		} catch (error) {
+			console.error('Error fetching service:', error);
+			res
+				.status(500)
+				.json({ error: 'Failed to fetch service.' });
+		}
+	},
+);
 
-// 			// Handle image uploads
-// 			const uploadedImages = req.files.map(
-// 				(file) => file.path,
-// 			);
-// 			items = items.map((item, index) => ({
-// 				...item,
-// 				image: uploadedImages[index] || item.image, // Keep old image if no new one uploaded
-// 			}));
+// Update a service (Vendor only)
+router.put(
+	'/:pageId/services/:serviceId',
+	verifyToken,
+	uploadService.array('images', 5),
+	async (req, res) => {
+		try {
+			const { pageId, serviceId } = req.params;
+			const vendorId = req.user.userId;
 
-// 			// Sanitize price (cast to number or set to previous value)
-// 			const price =
-// 				req.body.price && !isNaN(req.body.price)
-// 					? Number(req.body.price)
-// 					: service.price;
+			const page = await Page.findById(pageId);
+			if (!page) {
+				return res
+					.status(404)
+					.json({ error: 'Page not found.' });
+			}
 
-// 			// Assign updates
-// 			Object.assign(service, {
-// 				...req.body,
-// 				price, // Use sanitized price value
-// 				items,
-// 				schedule,
-// 				availability:
-// 					req.body.availability ?? service.availability,
-// 			});
+			if (page.vendor.toString() !== vendorId) {
+				return res.status(403).json({
+					error: 'Unauthorized: You do not own this page.',
+				});
+			}
 
-// 			await service.save();
-// 			res.json(service);
-// 		} catch (error) {
-// 			console.error('Error updating service:', error);
-// 			res
-// 				.status(500)
-// 				.json({ error: 'Failed to update service' });
-// 		}
-// 	},
-// );
+			const service = page.services.id(serviceId);
+			if (!service) {
+				return res.status(404).json({
+					error: 'Service not found on this page.',
+				});
+			}
 
+			// Update service fields from req.body
+			Object.assign(service, req.body);
 
+			// Handle new image uploads
+			if (req.files && req.files.length > 0) {
+				const newImages = req.files.map((file) => ({
+					url: file.path,
+				}));
+				service.images = newImages; // Replace old images with new ones
+			}
 
-// // Delete a service (Vendor only)
-// router.delete('/:id', authMiddleware, async (req, res) => {
-// 	try {
-// 		const service = await Service.findById(req.params.id);
+			await page.save();
 
-// 		if (
-// 			!service ||
-// 			service.vendor.toString() !== req.user.id
-// 		) {
-// 			return res
-// 				.status(403)
-// 				.json({ error: 'Unauthorized' });
-// 		}
+			res.json({
+				success: true,
+				message: 'Service updated successfully',
+				service,
+				page,
+			});
+		} catch (error) {
+			console.error('Error updating service:', error);
+			res
+				.status(500)
+				.json({ error: 'Failed to update service.' });
+		}
+	},
+);
 
-// 		await service.deleteOne();
-// 		res.json({ message: 'Service deleted' });
-// 	} catch (error) {
-// 		res
-// 			.status(500)
-// 			.json({ error: 'Failed to delete service' });
-// 	}
-// });
+// Delete a service (Vendor only)
+router.delete(
+	'/:pageId/services/:serviceId',
+	verifyToken,
+	async (req, res) => {
+		try {
+			const { pageId, serviceId } = req.params;
+			const vendorId = req.user.id;
+
+			const page = await Page.findById(pageId);
+			if (!page) {
+				return res
+					.status(404)
+					.json({ error: 'Page not found.' });
+			}
+
+			if (page.vendor.toString() !== vendorId) {
+				return res.status(403).json({
+					error: 'Unauthorized: You do not own this page.',
+				});
+			}
+
+			// Use the id method to find and remove the sub-document
+			const service = page.services.id(serviceId);
+			if (!service) {
+				return res
+					.status(404)
+					.json({ error: 'Service not found.' });
+			}
+
+			service.remove();
+			await page.save();
+
+			res.json({
+				message: 'Service deleted successfully.',
+			});
+		} catch (error) {
+			console.error('Error deleting service:', error);
+			res
+				.status(500)
+				.json({ error: 'Failed to delete service.' });
+		}
+	},
+);
 
 export default router;
